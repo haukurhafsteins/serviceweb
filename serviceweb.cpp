@@ -13,6 +13,7 @@
 #define RECV_BUFFER_SIZE 4096
 #define MAX_FLOAT_BYTES 80
 #define JSON_BUF_SIZE (512 * 5)
+#define SEND_TIMOEOUT_MS 500
 
 typedef struct
 {
@@ -255,7 +256,7 @@ static void write_to_json_buf(pp_t pp, const char *format, ...)
     }
     va_end(valist);
     size_t read = JSON_BUF_SIZE - len;
-    if (pp_get_as_json(pp, &json_buf[len], &read))
+    if (pp_get_as_string(pp, &json_buf[len], &read, false))
         strncat(json_buf, "}}", JSON_BUF_SIZE - len - read);
     else
         strncat(json_buf, "\"\"}}", JSON_BUF_SIZE - len);
@@ -302,11 +303,14 @@ static void evloop_newstate(void *handler_arg, esp_event_base_t base, int32_t id
 
 static void evloop_http_event(void *handler_arg, esp_event_base_t base, int32_t id, void *context)
 {
+    esp_err_t err;
     int socfd = *(int *)context;
     switch (id)
     {
     case HTTP_SERVER_EVENT_DISCONNECTED:
-        ESP_ERROR_CHECK(esp_event_post_to(evloop.loop_handle, evloop.base, CMD_SOCKET_CLOSED, &socfd, sizeof(int), portMAX_DELAY));
+        err = esp_event_post_to(evloop.loop_handle, evloop.base, CMD_SOCKET_CLOSED, &socfd, sizeof(int), pdMS_TO_TICKS(SEND_TIMOEOUT_MS));
+        if (err != ESP_OK)
+            ESP_LOGE(TAG, "%s: Error posting event: %s", __func__, esp_err_to_name(err));
         break;
     case CMD_SOCKET_CLOSED:
         ESP_LOGI(TAG, "%s: socket %d closed", __func__, socfd);
@@ -341,7 +345,9 @@ static esp_err_t ws_handler(httpd_req_t *req)
     wsdata->socket = httpd_req_to_sockfd(req);
 
     // Send data to serveiceweb task
-    esp_err_t err = esp_event_post_to(evloop.loop_handle, evloop.base, CMD_WS_HANDLER, wsdata, sizeof(pp_websocket_data_t) + ws_pkt.len, portMAX_DELAY);
+    esp_err_t err = esp_event_post_to(evloop.loop_handle, evloop.base, CMD_WS_HANDLER, wsdata, sizeof(pp_websocket_data_t) + ws_pkt.len, pdMS_TO_TICKS(SEND_TIMOEOUT_MS));
+    if (err != ESP_OK)
+        ESP_LOGE(TAG, "%s: Error posting event to serviceweb task: %s", __func__, esp_err_to_name(err));
     ESP_ERROR_CHECK(err);
     return err;
 }
