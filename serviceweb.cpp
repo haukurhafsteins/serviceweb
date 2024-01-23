@@ -12,7 +12,7 @@
 
 #define RECV_BUFFER_SIZE 4096
 #define MAX_FLOAT_BYTES 80
-#define JSON_BUF_SIZE (512 * 5)
+#define JSON_BUF_SIZE (512 * 10)
 #define SEND_TIMOEOUT_MS 500
 
 typedef struct
@@ -37,7 +37,7 @@ static const char *UNSUBSCRIBE_MESSAGE = "{\"cmd\":\"unsubscribeResp\",\"data\":
 static const char *NNEWSTATE_FLOAT = "{\"f\":\"%s\"}";
 
 static char TAG[] = "SERVWEB";
-static char json_buf[JSON_BUF_SIZE];
+static char *json_buf = (char *)malloc(JSON_BUF_SIZE);
 static pp_evloop_t evloop;
 ESP_EVENT_DEFINE_BASE(SERVWEB_EVENTS);
 
