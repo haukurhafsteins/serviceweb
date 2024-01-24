@@ -537,7 +537,7 @@ void serviceweb_init()
         .task_name = "servweb",
         .task_priority = 4,
         .task_stack_size = 16384+4096,
-        .task_core_id = 0};
+        .task_core_id = 1};
 
     evloop.base = SERVWEB_EVENTS;
     esp_event_loop_create(&loop_args, &evloop.loop_handle);
