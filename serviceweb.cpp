@@ -536,7 +536,7 @@ void serviceweb_init()
         .queue_size = 20,
         .task_name = "servweb",
         .task_priority = 4,
-        .task_stack_size = 16384+4096,
+        .task_stack_size = 16384,
         .task_core_id = 1};
 
     evloop.base = SERVWEB_EVENTS;
