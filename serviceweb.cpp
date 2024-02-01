@@ -27,6 +27,9 @@ enum
     CMD_WS_HANDLER,
 };
 
+extern esp_err_t ota_post_handler(httpd_req_t *req);
+extern "C" esp_err_t sysmon_get_handler(httpd_req_t *req);
+
 static const char *SUBSCRIBE_RESP = "subscribeResp";
 static const char *RESP_MESSAGE = "{\"cmd\":\"%s\",\"data\":{\"name\":\"%s\", \"value\":";
 static const char *NEWSTATE_FLOAT = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%f}}";
@@ -36,6 +39,7 @@ static const char *UNSUBSCRIBE_MESSAGE = "{\"cmd\":\"unsubscribeResp\",\"data\":
 
 static const char *NNEWSTATE_FLOAT = "{\"f\":\"%s\"}";
 
+static char* app_namespace = NULL;
 static char TAG[] = "SERVWEB";
 static char *json_buf = (char *)malloc(JSON_BUF_SIZE);
 static pp_evloop_t evloop;
@@ -43,18 +47,7 @@ ESP_EVENT_DEFINE_BASE(SERVWEB_EVENTS);
 
 static void evloop_newstate(void *handler_arg, esp_event_base_t base, int32_t id, void *context);
 
-esp_err_t get_index(httpd_req_t *req)
-{
-    const int bufsize = 1024;
-    char *buf = (char *)calloc(bufsize, sizeof(char));
-    size_t len = snprintf(buf, bufsize, "AsgardGrip");
-    httpd_resp_send_chunk(req, buf, len);
-    httpd_resp_set_hdr(req, "Connection", "close");
-    httpd_resp_send_chunk(req, buf, 0);
-    return ESP_OK;
-}
-
-esp_err_t get_web(httpd_req_t *req)
+static esp_err_t resp_file(httpd_req_t *req, const char *filename)
 {
     int read = 0;
     const int bufsize = 1024;
@@ -66,13 +59,13 @@ esp_err_t get_web(httpd_req_t *req)
     if (strstr(encoding, "gzip"))
         gzip_supported = true;
 
-    snprintf(buf, bufsize, "/spiffs%s%s", req->uri, gzip_supported ? ".gz" : "");
+    snprintf(buf, bufsize, "/spiffs%s%s", filename, gzip_supported ? ".gz" : "");
     FILE *file = fopen(buf, "rb");
     if (file == NULL)
     {
         ESP_LOGE(TAG, "File %s does not exist, going for non .gz file...", buf);
         gzip_supported = false;
-        snprintf(buf, bufsize, "/spiffs%s", req->uri);
+        snprintf(buf, bufsize, "/spiffs%s", filename);
         file = fopen(buf, "rb");
         if (file == NULL)
         {
@@ -84,13 +77,13 @@ esp_err_t get_web(httpd_req_t *req)
 
     // ESP_LOGW(TAG, "Serving %s", buf);
 
-    if (strstr(req->uri, ".html") != NULL)
+    if (strstr(filename, ".html") != NULL)
         httpd_resp_set_type(req, "text/html");
-    else if (strstr(req->uri, ".js") != NULL)
+    else if (strstr(filename, ".js") != NULL)
         httpd_resp_set_type(req, "application/javascript");
-    else if (strstr(req->uri, ".css") != NULL)
+    else if (strstr(filename, ".css") != NULL)
         httpd_resp_set_type(req, "text/css");
-    else if (strstr(req->uri, ".svg") != NULL)
+    else if (strstr(filename, ".svg") != NULL)
         httpd_resp_set_type(req, "image/svg+xml");
 
     if (gzip_supported)
@@ -111,6 +104,16 @@ esp_err_t get_web(httpd_req_t *req)
     free(buf);
 
     return ESP_OK;
+}
+
+esp_err_t get_index(httpd_req_t *req)
+{
+    return resp_file(req, "/spiffs/index.html");
+}
+
+esp_err_t get_web(httpd_req_t *req)
+{
+    return resp_file(req, req->uri);
 }
 
 //-- Parameter handling --------------------------------------------------------
@@ -516,13 +519,13 @@ void register_files(const char *basePath, const char *path)
         // if (S_ISDIR(statbuf.st_mode))
         // {
         //     printf("%s/\n", fullPath + strlen(basePath));
-        //     httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET);
+        //     httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET, NULL);
         //     // Recur into the subdirectory
         //     register_files(basePath, fullPath);
         // }
         // else
         {
-            httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET);
+            httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET, NULL);
             // printf("%s\n", fullPath + strlen(basePath));
         }
     }
@@ -530,8 +533,9 @@ void register_files(const char *basePath, const char *path)
     closedir(dp);
 }
 
-void serviceweb_init()
+void serviceweb_init(const char* nvs_namespace)
 {
+    app_namespace = (char*)nvs_namespace;
     esp_event_loop_args_t loop_args = {
         .queue_size = 20,
         .task_name = "servweb",
@@ -545,8 +549,10 @@ void serviceweb_init()
 
 void serviceweb_start(void)
 {
-    httpss_register_url("/", false, get_index, HTTP_GET);
-    httpss_register_url("/ws", true, ws_handler, HTTP_GET);
+    httpss_register_url("/", false, get_index, HTTP_GET, NULL);
+    httpss_register_url("/ws", true, ws_handler, HTTP_GET, NULL);
+    httpss_register_url("/update", false, ota_post_handler, HTTP_POST, NULL);
+    httpss_register_url("/metrics", false, sysmon_get_handler, HTTP_GET, NULL);
 
     const char *path = "/spiffs/";
     register_files(path, path);
