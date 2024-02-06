@@ -28,13 +28,13 @@ enum
 };
 
 extern esp_err_t ota_post_handler(httpd_req_t *req);
+extern esp_err_t spiffs_upload_handler(httpd_req_t *req);
 extern "C" esp_err_t sysmon_get_handler(httpd_req_t *req);
 
 static const char *SUBSCRIBE_RESP = "subscribeResp";
 static const char *RESP_MESSAGE = "{\"cmd\":\"%s\",\"data\":{\"name\":\"%s\", \"value\":";
 static const char *NEWSTATE_FLOAT = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%f}}";
 static const char *NEWSTATE_INT32 = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%ld}}";
-static const char *NEWSTATE_FLOAT_ARRAY = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\",\"value\":\"float\"}}";
 static const char *UNSUBSCRIBE_MESSAGE = "{\"cmd\":\"unsubscribeResp\",\"data\":\"%s\"}";
 
 static const char *NNEWSTATE_FLOAT = "{\"f\":\"%s\"}";
@@ -91,9 +91,11 @@ static esp_err_t resp_file(httpd_req_t *req, const char *filename)
         httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
     }
 
+    printf("Serving file %s, gzip: %d\n", buf, gzip_supported);
     while ((read = fread(buf, 1, bufsize, file)) > 0)
     {
         httpd_resp_send_chunk(req, buf, read);
+        printf("Sent %d bytes\n", read);
     }
 
     httpd_resp_set_hdr(req, "Connection", "close");
@@ -476,23 +478,6 @@ exit:
     cJSON_Delete(doc);
 }
 
-char *httpss_get_float_array_hdr(char *name, char *buf, size_t buf_size)
-{
-    size_t len = strlen(NEWSTATE_FLOAT_ARRAY) + strlen(name) + 1; // +1: null term
-    if (len > buf_size)
-        return NULL;
-    snprintf(buf, buf_size, NEWSTATE_FLOAT_ARRAY, name);
-    return buf;
-
-    // size_t len = tmp_len;
-    // if (tmp_len / 4 * 4 != tmp_len)
-    //     len = (tmp_len + 4) / 4 * 4;
-
-    // for (int i= 0;i<)
-    // if (len / 4 * 4 != len)
-    //     len = (len + 4) / 4 * 4;
-}
-
 void register_files(const char *basePath, const char *path)
 {
     struct dirent *entry;
@@ -526,7 +511,7 @@ void register_files(const char *basePath, const char *path)
         // else
         {
             httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET, NULL);
-            // printf("%s\n", fullPath + strlen(basePath));
+            printf("%s\n", fullPath + strlen(basePath));
         }
     }
 
@@ -549,10 +534,12 @@ void serviceweb_init(const char* nvs_namespace)
 
 void serviceweb_start(void)
 {
-    httpss_register_url("/", false, get_index, HTTP_GET, NULL);
+    //httpss_register_url("/", false, get_index, HTTP_GET, NULL);
     httpss_register_url("/ws", true, ws_handler, HTTP_GET, NULL);
     httpss_register_url("/update", false, ota_post_handler, HTTP_POST, NULL);
+    httpss_register_url("/upload/*", false, spiffs_upload_handler, HTTP_POST, NULL);
     httpss_register_url("/metrics", false, sysmon_get_handler, HTTP_GET, NULL);
+
 
     const char *path = "/spiffs/";
     register_files(path, path);

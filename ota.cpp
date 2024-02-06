@@ -15,6 +15,8 @@ esp_err_t ota_post_handler(httpd_req_t *req) {
     int received = 0;
     int total_received = 0;
 
+    printf("#### ota_post_handler: %s\n", req->uri);
+    
     if (!boundary_found) {
         // Extract the boundary from the content type
         if (ESP_OK == httpd_req_get_hdr_value_str(req, "Content-Type", buf, sizeof(buf)))
