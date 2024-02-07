@@ -39,7 +39,6 @@ static const char *UNSUBSCRIBE_MESSAGE = "{\"cmd\":\"unsubscribeResp\",\"data\":
 
 static const char *NNEWSTATE_FLOAT = "{\"f\":\"%s\"}";
 
-static char* app_namespace = NULL;
 static char TAG[] = "SERVWEB";
 static char *json_buf = (char *)malloc(JSON_BUF_SIZE);
 static pp_evloop_t evloop;
@@ -518,9 +517,8 @@ void register_files(const char *basePath, const char *path)
     closedir(dp);
 }
 
-void serviceweb_init(const char* nvs_namespace)
+void serviceweb_init()
 {
-    app_namespace = (char*)nvs_namespace;
     esp_event_loop_args_t loop_args = {
         .queue_size = 20,
         .task_name = "servweb",
