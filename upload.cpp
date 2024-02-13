@@ -12,7 +12,6 @@
 const static char *TAG = "spiffs";
 
 static char boundary[BOUNDARY_MAX_LEN];
-static bool boundary_found = false;
 
 esp_err_t spiffs_upload_handler(httpd_req_t *req)
 {
@@ -41,6 +40,7 @@ esp_err_t spiffs_upload_handler(httpd_req_t *req)
     static char buf[BUFFSIZE];
     int received = 0;
     int total_received = 0;
+    bool boundary_found = false;
 
     if (!boundary_found)
     {

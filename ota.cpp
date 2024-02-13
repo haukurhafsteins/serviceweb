@@ -8,24 +8,20 @@
 #define BUFFSIZE 2048
 
 static char boundary[BOUNDARY_MAX_LEN];
-static bool boundary_found = false;
 
 esp_err_t ota_post_handler(httpd_req_t *req) {
     char buf[BUFFSIZE];
     int received = 0;
     int total_received = 0;
+    bool boundary_found = false;
 
-    printf("#### ota_post_handler: %s\n", req->uri);
-    
-    if (!boundary_found) {
-        // Extract the boundary from the content type
-        if (ESP_OK == httpd_req_get_hdr_value_str(req, "Content-Type", buf, sizeof(buf)))
-        {
-            char *boundary_start = strstr(buf, "boundary=");
-            if (boundary_start) {
-                snprintf(boundary, sizeof(boundary), "--%s", boundary_start + 9);
-                boundary_found = true;
-            }
+    // Extract the boundary from the content type
+    if (ESP_OK == httpd_req_get_hdr_value_str(req, "Content-Type", buf, sizeof(buf)))
+    {
+        char *boundary_start = strstr(buf, "boundary=");
+        if (boundary_start) {
+            snprintf(boundary, sizeof(boundary), "--%s", boundary_start + 9);
+            boundary_found = true;
         }
     }
 
