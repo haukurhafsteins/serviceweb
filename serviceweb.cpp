@@ -13,7 +13,7 @@
 #define RECV_BUFFER_SIZE 4096
 #define MAX_FLOAT_BYTES 80
 #define JSON_BUF_SIZE (512 * 10)
-#define SEND_TIMOEOUT_MS 500
+#define SEND_TIMOEOUT_MS 50
 
 typedef struct
 {
@@ -90,11 +90,9 @@ static esp_err_t resp_file(httpd_req_t *req, const char *filename)
         httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
     }
 
-    printf("Serving file %s, gzip: %d\n", buf, gzip_supported);
     while ((read = fread(buf, 1, bufsize, file)) > 0)
     {
         httpd_resp_send_chunk(req, buf, read);
-        printf("Sent %d bytes\n", read);
     }
 
     httpd_resp_set_hdr(req, "Connection", "close");
@@ -443,7 +441,7 @@ static void evloop_ws_handler(void *arg, esp_event_base_t event_base, int32_t ev
             if (par_exist(pp) || pp_subscribe(pp, &evloop, evloop_newstate))
             {
                 if (!par_socket_exist(pp, wsdata->socket))
-                    par_add_socket(pp, wsdata->socket); 
+                    par_add_socket(pp, wsdata->socket);
                 write_to_json_buf(pp, RESP_MESSAGE, SUBSCRIBE_RESP, parname->valuestring);
                 if (!httpss_websocket_send(wsdata->socket, json_buf))
                 {
@@ -498,21 +496,15 @@ void register_files(const char *basePath, const char *path)
         }
 
         snprintf(fullPath, sizeof(fullPath), "%s/%s", path, entry->d_name);
-        // stat(fullPath, &statbuf);
-
-        // if (S_ISDIR(statbuf.st_mode))
-        // {
-        //     printf("%s/\n", fullPath + strlen(basePath));
-        //     httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET, NULL);
-        //     // Recur into the subdirectory
-        //     register_files(basePath, fullPath);
-        // }
-        // else
+        httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET, NULL);
+        // if the url ends with .gz, register the url without the .gz
+        if (strstr(fullPath, ".gz") != NULL)
         {
+            char *dot = strrchr(fullPath, '.');
+            *dot = 0;
             httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET, NULL);
-            printf("%s\n", fullPath + strlen(basePath));
         }
-    }
+            }
 
     closedir(dp);
 }
@@ -532,12 +524,11 @@ void serviceweb_init()
 
 void serviceweb_start(void)
 {
-    //httpss_register_url("/", false, get_index, HTTP_GET, NULL);
+    // httpss_register_url("/", false, get_index, HTTP_GET, NULL);
     httpss_register_url("/ws", true, ws_handler, HTTP_GET, NULL);
     httpss_register_url("/update", false, ota_post_handler, HTTP_POST, NULL);
     httpss_register_url("/upload/*", false, spiffs_upload_handler, HTTP_POST, NULL);
     httpss_register_url("/metrics", false, sysmon_get_handler, HTTP_GET, NULL);
-
 
     const char *path = "/spiffs/";
     register_files(path, path);
