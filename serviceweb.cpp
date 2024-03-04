@@ -368,7 +368,6 @@ static esp_err_t ws_handler(httpd_req_t *req)
     esp_err_t err = esp_event_post_to(evloop.loop_handle, evloop.base, CMD_WS_HANDLER, wsdata, sizeof(pp_websocket_data_t) + ws_pkt.len, pdMS_TO_TICKS(SEND_TIMOEOUT_MS));
     if (err != ESP_OK)
         ESP_LOGE(TAG, "%s: Error posting event to serviceweb task: %s", __func__, esp_err_to_name(err));
-    ESP_ERROR_CHECK(err);
     return err;
 }
 
@@ -530,10 +529,10 @@ void register_files(const char *basePath, const char *path)
 void serviceweb_init()
 {
     esp_event_loop_args_t loop_args = {
-        .queue_size = 20,
+        .queue_size = 40,
         .task_name = "servweb",
         .task_priority = 4,
-        .task_stack_size = 16384,
+        .task_stack_size = 1024 * 12,
         .task_core_id = 1};
 
     evloop.base = SERVWEB_EVENTS;
