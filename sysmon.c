@@ -15,7 +15,7 @@
 // #include "math.h"
 #include "ethernet.h"
 // #include "discovery.h"
-#include "esp_spiffs.h"
+//#include "esp_spiffs.h"
 
 // #define MIN(a, b) ((a) > (b) ? (b) : (a))
 // #define RECV_BUFFER_SIZE 1024
