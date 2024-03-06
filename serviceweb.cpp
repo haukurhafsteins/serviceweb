@@ -36,6 +36,7 @@ static const char *RESP_MESSAGE = "{\"cmd\":\"%s\",\"data\":{\"name\":\"%s\", \"
 static const char *NEWSTATE_FLOAT = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%f}}";
 static const char *NEWSTATE_INT32 = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%ld}}";
 static const char *NEWSTATE_STRING = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":\"%s\"}}";
+static const char *NEWSTATE_JSON = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%s}}";
 static const char *UNSUBSCRIBE_MESSAGE = "{\"cmd\":\"unsubscribeResp\",\"data\":\"%s\"}";
 
 static const char *NNEWSTATE_FLOAT = "{\"f\":\"%s\"}";
@@ -220,10 +221,13 @@ static bool web_post_newstate_string(pp_t pp, const char* str)
 {
     if (!par_list_empty())
     {
+        const char* format = NEWSTATE_STRING;
+        if (str[0] == '{')
+            format = NEWSTATE_JSON;
         const char *name = pp_get_name(pp);
-        size_t len = strlen(NEWSTATE_STRING) + strlen(name) + strlen(str) + 1;
+        size_t len = strlen(format) + strlen(name) + strlen(str) + 1;
         char *json = (char *)malloc(len);
-        snprintf(json, len, NEWSTATE_STRING, name, str);
+        snprintf(json, len, format, name, str);
         par_send_to_sockets(pp, json);
         free(json);
     }
