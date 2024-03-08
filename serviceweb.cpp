@@ -499,8 +499,8 @@ exit:
 void register_files(const char *basePath, const char *path)
 {
     struct dirent *entry;
-    // struct stat statbuf;
-    char fullPath[512];
+    struct stat statbuf;
+    char *fullPath = (char *)malloc(10000);
 
     DIR *dp = opendir(path);
     if (dp == NULL)
@@ -516,17 +516,35 @@ void register_files(const char *basePath, const char *path)
             continue;
         }
 
-        snprintf(fullPath, sizeof(fullPath), "%s/%s", path, entry->d_name);
-        httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET, NULL);
-        // if the url ends with .gz, register the url without the .gz
-        if (strstr(fullPath, ".gz") != NULL)
+        snprintf(fullPath, 10000, "%s/%s", path, entry->d_name);
+        
+        // Use stat to fill in the statbuf structure with information about the file/directory
+        if (stat(fullPath, &statbuf) == -1)
         {
-            char *dot = strrchr(fullPath, '.');
-            *dot = 0;
+            perror("Failed to get file status");
+            continue;
+        }
+
+        // If the entry is a directory, recurse into it
+        if (S_ISDIR(statbuf.st_mode))
+        {
+            register_files(basePath, fullPath);
+        }
+        else
+        {
+            // Register URL for files, adjusting the path as before
             httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET, NULL);
+            
+            // If the url ends with .gz, register the url without the .gz
+            if (strstr(fullPath, ".gz") != NULL)
+            {
+                char *dot = strrchr(fullPath, '.');
+                *dot = '\0';
+                httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET, NULL);
+            }
         }
     }
-
+    free(fullPath);
     closedir(dp);
 }
 
