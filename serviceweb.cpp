@@ -28,8 +28,9 @@ enum
 };
 
 extern esp_err_t ota_post_handler(httpd_req_t *req);
-extern esp_err_t spiffs_upload_handler(httpd_req_t *req);
+extern esp_err_t file_upload_handler(httpd_req_t *req);
 extern "C" esp_err_t sysmon_get_handler(httpd_req_t *req);
+extern esp_err_t file_listdir_handler(httpd_req_t *req);
 
 static const char *SUBSCRIBE_RESP = "subscribeResp";
 static const char *RESP_MESSAGE = "{\"cmd\":\"%s\",\"data\":{\"name\":\"%s\", \"value\":";
@@ -554,7 +555,7 @@ void serviceweb_init()
         .queue_size = 40,
         .task_name = "servweb",
         .task_priority = 4,
-        .task_stack_size = 1024 * 12,
+        .task_stack_size = 1024 * 10,
         .task_core_id = 1};
 
     evloop.base = SERVWEB_EVENTS;
@@ -566,8 +567,9 @@ void serviceweb_start(void)
     // httpss_register_url("/", false, get_index, HTTP_GET, NULL);
     httpss_register_url("/ws", true, ws_handler, HTTP_GET, NULL);
     httpss_register_url("/update", false, ota_post_handler, HTTP_POST, NULL);
-    httpss_register_url("/upload/*", false, spiffs_upload_handler, HTTP_POST, NULL);
+    httpss_register_url("/upload/*", false, file_upload_handler, HTTP_POST, NULL);
     httpss_register_url("/metrics", false, sysmon_get_handler, HTTP_GET, NULL);
+    httpss_register_url("/listdir", false, file_listdir_handler, HTTP_GET, NULL);
 
     const char *path = "/spiffs/";
     register_files(path, path);

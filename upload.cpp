@@ -2,7 +2,6 @@
 #include <string.h>
 #include "esp_log.h"
 #include "esp_vfs.h"
-//#include "esp_spiffs.h"
 #include "esp_http_server.h"
 
 #define BOUNDARY_MAX_LEN 100
@@ -13,7 +12,7 @@ const static char *TAG = "spiffs";
 
 static char boundary[BOUNDARY_MAX_LEN];
 
-esp_err_t spiffs_upload_handler(httpd_req_t *req)
+esp_err_t file_upload_handler(httpd_req_t *req)
 {
     char filepath[FILE_PATH_MAX];
     FILE *f = NULL;
@@ -155,163 +154,3 @@ esp_err_t spiffs_upload_handler(httpd_req_t *req)
     return res;
 }
 
-// #include <stdio.h>
-// #include <string.h>
-// #include <sys/param.h>
-// #include <sys/unistd.h>
-// #include <sys/stat.h>
-// #include <dirent.h>
-
-// #include "esp_err.h"
-// #include "esp_log.h"
-
-// #include "esp_vfs.h"
-// #include "esp_spiffs.h"
-// #include "esp_http_server.h"
-
-// /* Max length a file path can have on storage */
-// #define FILE_PATH_MAX (ESP_VFS_PATH_MAX + CONFIG_SPIFFS_OBJ_NAME_LEN)
-
-// /* Max size of an individual file. Make sure this
-//  * value is same as that set in upload_script.html */
-// #define MAX_FILE_SIZE   (200*1024) // 200 KB
-// #define MAX_FILE_SIZE_STR "200KB"
-
-// /* Scratch buffer size */
-// #define SCRATCH_BUFSIZE  8192
-
-// static const char *TAG = "file_server";
-
-// esp_err_t spiffs_upload_handler(httpd_req_t *req)
-// {
-//     static char filepath[FILE_PATH_MAX];
-//     FILE *fd = NULL;
-//     struct stat file_stat;
-
-//     printf("#### spiffs_upload_handler: %s\n", req->uri);
-
-//     // Extract filename from the URI
-//     // req->uri will contain the path, e.g., /upload/filename.txt
-//     const char *filename = req->uri + strlen("/upload/"); // Skip the /upload/ part to get the filename
-//     if (*filename == '\0')
-//     {
-//         // Handle case where no filename is provided in the URL
-//         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename is required");
-//         ESP_LOGE(TAG, "Filename is required, but not provided in the URL: %s", req->uri);
-//         return ESP_FAIL;
-//     }
-
-//     // Ensure the filename does not exceed our buffer size and construct the full path
-//     if (snprintf(filepath, sizeof(filepath), "/spiffs/%s", filename) >= sizeof(filepath))
-//     {
-//         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename is too long");
-//         return ESP_FAIL;
-//     }
-
-//     /* Filename cannot have a trailing '/' */
-//     if (filename[strlen(filename) - 1] == '/')
-//     {
-//         ESP_LOGE(TAG, "Invalid filename : %s", filename);
-//         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Invalid filename");
-//         return ESP_FAIL;
-//     }
-
-//     // if (stat(filepath, &file_stat) == 0)
-//     // {
-//     //     ESP_LOGE(TAG, "File already exists : %s", filepath);
-//     //     /* Respond with 400 Bad Request */
-//     //     httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "File already exists");
-//     //     return ESP_FAIL;
-//     // }
-
-//     /* File cannot be larger than a limit */
-//     if (req->content_len > MAX_FILE_SIZE)
-//     {
-//         ESP_LOGE(TAG, "File too large : %d bytes", req->content_len);
-//         /* Respond with 400 Bad Request */
-//         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST,
-//                             "File size must be less than " MAX_FILE_SIZE_STR "!");
-//         /* Return failure to close underlying connection else the
-//          * incoming file content will keep the socket busy */
-//         return ESP_FAIL;
-//     }
-
-//     fd = fopen(filepath, "w");
-//     if (!fd)
-//     {
-//         ESP_LOGE(TAG, "Failed to create file : %s", filepath);
-//         /* Respond with 500 Internal Server Error */
-//         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create file");
-//         return ESP_FAIL;
-//     }
-
-//     ESP_LOGI(TAG, "Receiving file : %s...", filename);
-
-//     /* Retrieve the pointer to scratch buffer for temporary storage */
-//     char *buf = (char *)malloc(SCRATCH_BUFSIZE);
-//     int received;
-
-//     /* Content length of the request gives
-//      * the size of the file being uploaded */
-//     int remaining = req->content_len;
-
-//     while (remaining > 0)
-//     {
-
-//         ESP_LOGI(TAG, "Remaining size : %d", remaining);
-//         /* Receive the file part by part into a buffer */
-//         if ((received = httpd_req_recv(req, buf, MIN(remaining, SCRATCH_BUFSIZE))) <= 0)
-//         {
-//             if (received == HTTPD_SOCK_ERR_TIMEOUT)
-//             {
-//                 /* Retry if timeout occurred */
-//                 continue;
-//             }
-
-//             /* In case of unrecoverable error,
-//              * close and delete the unfinished file*/
-//             fclose(fd);
-//             unlink(filepath);
-
-//             ESP_LOGE(TAG, "File reception failed!");
-//             /* Respond with 500 Internal Server Error */
-//             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to receive file");
-//             free(buf);
-//             return ESP_FAIL;
-//         }
-
-//         /* Write buffer content to file on storage */
-//         if (received && (received != fwrite(buf, 1, received, fd)))
-//         {
-//             /* Couldn't write everything to file!
-//              * Storage may be full? */
-//             fclose(fd);
-//             unlink(filepath);
-
-//             ESP_LOGE(TAG, "File write failed!");
-//             /* Respond with 500 Internal Server Error */
-//             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to write file to storage");
-//             free(buf);
-//             return ESP_FAIL;
-//         }
-
-//         /* Keep track of remaining size of
-//          * the file left to be uploaded */
-//         remaining -= received;
-//     }
-
-//     free(buf);
-
-//     /* Close file upon upload completion */
-//     fclose(fd);
-//     ESP_LOGI(TAG, "File reception complete");
-
-//     /* Redirect onto root to see the updated file list */
-//     httpd_resp_set_status(req, "303 See Other");
-//     httpd_resp_set_hdr(req, "Location", "/");
-// #ifdef CONFIG_EXAMPLE_HTTPD_CONN_CLOSE_HEADER
-//     httpd_resp_set_hdr(req, "Connection", "close");
-// #endif
-//     httpd_resp_sendstr(req, "File uploaded successfully");
-//     return ESP_OK;
-// }
