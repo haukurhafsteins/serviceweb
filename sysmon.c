@@ -149,7 +149,7 @@ static void print_nvs_configuration(httpd_req_t *req, char *buf, size_t bufsize)
 
 static void print_public_parameters(httpd_req_t *req, char *buf, size_t bufsize)
 {
-    const char *pp_header = "<tr><th>Nr.</th><th>Type</th><th>Name</th><th>Owner</th><th>Subscriptions</th><th>Value</th><th>Unit</th></tr>";
+    const char *pp_header = "<tr><th>Nr.</th><th>Type</th><th>Name</th><th>Owner</th><th>Subscriptions</th><th>Value</th></tr>";
     httpd_resp_send_chunk(req, hdr_public_var_begin, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, pp_header, HTTPD_RESP_USE_STRLEN);
     pp_info_t info;
@@ -162,33 +162,33 @@ static void print_public_parameters(httpd_req_t *req, char *buf, size_t bufsize)
         switch (info.type)
         {
         case TYPE_INT32:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>%ld</td><td>%s</td></tr>",
-                     index, "int32", info.name, info.owner ? info.owner->base : str, info.subscriptions, info.valueptr != NULL ? *((int32_t *)info.valueptr) : 0, pp_unit_to_str(info.unit));
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>%ld</td></tr>",
+                     index, "int32", info.name, info.owner ? info.owner->base : str, info.subscriptions, info.valueptr != NULL ? *((int32_t *)info.valueptr) : 0);
             break;
         case TYPE_FLOAT:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>%f</td><td>%s</td></tr>",
-                     index, "Float", info.name, info.owner ? info.owner->base : str, info.subscriptions, info.valueptr != NULL ? *((float *)info.valueptr) : 0, pp_unit_to_str(info.unit));
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>%f</td></tr>",
+                     index, "Float", info.name, info.owner ? info.owner->base : str, info.subscriptions, info.valueptr != NULL ? *((float *)info.valueptr) : 0);
             break;
         case TYPE_INT16_ARRAY:
         case TYPE_FLOAT_ARRAY:
         case TYPE_EXECUTE:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td></td><td></td></tr>",
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td></td></tr>",
                      index, "Float[]", info.name, info.owner ? info.owner->base : str, info.subscriptions);
             break;
         case TYPE_STRING:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>String</td><td>%s</td><td>%s</td><td>%d</td><td>--</td><td></td></tr>",
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>String</td><td>%s</td><td>%s</td><td>%d</td><td>--</td></tr>",
                      index, info.name, info.owner ? info.owner->base : str, info.subscriptions);
             break;
         case TYPE_BINARY:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>--</td><td></td></tr>",
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>--</td></tr>",
                      index, "Binary", info.name, info.owner ? info.owner->base : str, info.subscriptions);
             break;
         case TYPE_BOOL:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>--</td><td>--</td><td></td></tr>",
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>--</td><td>--</td></tr>",
                      index, "Bool", info.name, info.owner ? info.owner->base : str);
             break;
         default:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>--</td><td>--</td><td></td></tr>",
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>--</td><td>--</td></tr>",
                      index, "Unknown", info.name, info.owner ? info.owner->base : str);
             break;
         }
