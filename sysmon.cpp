@@ -3,24 +3,13 @@
 #include "freertos/task.h"
 
 #include <esp_log.h>
-// #include <sys/socket.h>
 #include "esp_http_server.h"
-// #include "esp_event.h"
-// #include "nvsstorage.h"
 #include "nvs.h"
-// #include "timeman.h"
-// #include "sdkconfig.h"
 #include "pp.h"
-// #include "webserver.h"
-// #include "math.h"
 #include "ethernet.h"
-// #include "discovery.h"
-//#include "esp_spiffs.h"
+#include "serviceweb.h"
 
-// #define MIN(a, b) ((a) > (b) ? (b) : (a))
-// #define RECV_BUFFER_SIZE 1024
-// #define TWO_PI 6.28318530
-
+static const char *nvs_namespace = "";
 static const char *TAG = "SYSMON";
 static const char *doc_start_to_body = "<!DOCTYPE html> \
 <html><head>\
@@ -87,7 +76,7 @@ static void print_nvs_configuration(httpd_req_t *req, char *buf, size_t bufsize)
     nvs_handle_t h;
 
     // TODO: get the namespace names from the nvsstorage.h file
-    if (ESP_OK == nvs_open("masi-air", NVS_READONLY, &h))
+    if (ESP_OK == nvs_open(nvs_namespace, NVS_READONLY, &h))
     {
         nvs_iterator_t it;
         esp_err_t err = nvs_entry_find("nvs", NULL, NVS_TYPE_ANY, &it);
@@ -202,13 +191,13 @@ static void print_public_parameters(httpd_req_t *req, char *buf, size_t bufsize)
 static void print_tasks(httpd_req_t *req, char *buf, size_t bufsize, const char *param)
 {
     TaskStatus_t *pxTaskStatusArray;
-    volatile UBaseType_t uxArraySize, x;
+    UBaseType_t uxArraySize, x;
     uint32_t ulTotalRunTime, ulStatsAsPercentage;
 
     *buf = 0x00;
 
     uxArraySize = uxTaskGetNumberOfTasks();
-    pxTaskStatusArray = pvPortMalloc(uxArraySize * sizeof(TaskStatus_t));
+    pxTaskStatusArray = (TaskStatus_t*)pvPortMalloc(uxArraySize * sizeof(TaskStatus_t));
 
     if (pxTaskStatusArray != NULL)
     {
@@ -272,7 +261,7 @@ static void print_tasks(httpd_req_t *req, char *buf, size_t bufsize, const char 
 static void print_memory(httpd_req_t *req, char *buf, size_t bufsize)
 {
     const char *mem_name[11] = {"Executable", "32 Bit", "8 Bit", "DMA", "SPIRAM", "Internal", "Default", "IRAM 8 Bit", "Retention", "RTCRAM", "Invalid"};
-    uint32_t caps[11] = {MALLOC_CAP_EXEC, MALLOC_CAP_32BIT, MALLOC_CAP_8BIT, MALLOC_CAP_DMA, MALLOC_CAP_SPIRAM, MALLOC_CAP_INTERNAL, MALLOC_CAP_DEFAULT, MALLOC_CAP_IRAM_8BIT, MALLOC_CAP_RETENTION, MALLOC_CAP_RTCRAM, MALLOC_CAP_INVALID};
+    uint32_t caps[11] = {MALLOC_CAP_EXEC, MALLOC_CAP_32BIT, MALLOC_CAP_8BIT, MALLOC_CAP_DMA, MALLOC_CAP_SPIRAM, MALLOC_CAP_INTERNAL, MALLOC_CAP_DEFAULT, MALLOC_CAP_IRAM_8BIT, MALLOC_CAP_RETENTION, MALLOC_CAP_RTCRAM, 0};
     httpd_resp_send_chunk(req, hdr_memory_begin, HTTPD_RESP_USE_STRLEN);
     snprintf(buf, bufsize, "<tr> <th>Memory Name</th> <th>Total Free Bytes</th> <th>Total Allocated Bytes</th> <th>Largest Free Block</th> <th>Minimum Free Bytes</th><th>Allocated Blocks</th> <th>Free Blocks</th> <th>Total Blocks</th> </tr>");
     httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
@@ -298,7 +287,7 @@ static void print_memory(httpd_req_t *req, char *buf, size_t bufsize)
 esp_err_t sysmon_get_handler(httpd_req_t *req)
 {
     const int bufsize = 4096;
-    char *buf = calloc(bufsize, sizeof(char));
+    char *buf = (char*) calloc(bufsize, sizeof(char));
 
     httpd_resp_send_chunk(req, doc_start_to_body, HTTPD_RESP_USE_STRLEN);
     print_buttons(req, buf, bufsize);
@@ -306,7 +295,7 @@ esp_err_t sysmon_get_handler(httpd_req_t *req)
     const int buf_len = httpd_req_get_url_query_len(req) + 1;
     if (buf_len > 1)
     {
-        char *buf1 = malloc(buf_len);
+        char *buf1 = (char*) malloc(buf_len);
         if (httpd_req_get_url_query_str(req, buf1, buf_len) == ESP_OK)
         {
             char param[32];
@@ -330,4 +319,9 @@ esp_err_t sysmon_get_handler(httpd_req_t *req)
     free(buf);
 
     return ESP_OK;
+}
+
+void serviceweb_set_nvs_namespace(const char *name)
+{
+    nvs_namespace = name;
 }

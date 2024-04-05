@@ -29,7 +29,7 @@ enum
 
 extern esp_err_t ota_post_handler(httpd_req_t *req);
 extern esp_err_t file_upload_handler(httpd_req_t *req);
-extern "C" esp_err_t sysmon_get_handler(httpd_req_t *req);
+extern esp_err_t sysmon_get_handler(httpd_req_t *req);
 extern esp_err_t file_listdir_handler(httpd_req_t *req);
 
 static const char *SUBSCRIBE_RESP = "subscribeResp";
