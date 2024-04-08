@@ -1,6 +1,8 @@
 #include <dirent.h>
 #include <stdio.h>
 #include <sys/stat.h>
+#include <fcntl.h>
+#include <errno.h>
 #include <map>
 #include <list>
 #include "esp_log.h"
@@ -218,11 +220,11 @@ static bool web_post_newstate_int32(pp_t pp, int32_t i)
     return true;
 }
 
-static bool web_post_newstate_string(pp_t pp, const char* str)
+static bool web_post_newstate_string(pp_t pp, const char *str)
 {
     if (!par_list_empty())
     {
-        const char* format = NEWSTATE_STRING;
+        const char *format = NEWSTATE_STRING;
         if (str[0] == '{')
             format = NEWSTATE_JSON;
         const char *name = pp_get_name(pp);
@@ -326,14 +328,22 @@ static void evloop_newstate(void *handler_arg, esp_event_base_t base, int32_t id
     }
 }
 
+static esp_err_t evloop_post(esp_event_loop_handle_t loop_handle, esp_event_base_t loop_base, int32_t id, void *data, size_t data_size)
+{
+    if (loop_handle == NULL)
+        return esp_event_post(loop_base, id, data, data_size, pdMS_TO_TICKS(SEND_TIMOEOUT_MS));
+    return esp_event_post_to(loop_handle, loop_base, id, data, data_size, pdMS_TO_TICKS(SEND_TIMOEOUT_MS));
+}
+
 static void evloop_http_event(void *handler_arg, esp_event_base_t base, int32_t id, void *context)
 {
     esp_err_t err;
     int socfd = *(int *)context;
+    int flags;
     switch (id)
     {
     case HTTP_SERVER_EVENT_DISCONNECTED:
-        err = esp_event_post_to(evloop.loop_handle, evloop.base, CMD_SOCKET_CLOSED, &socfd, sizeof(int), pdMS_TO_TICKS(SEND_TIMOEOUT_MS));
+        err = evloop_post(evloop.loop_handle, evloop.base, CMD_SOCKET_CLOSED, &socfd, sizeof(int));
         if (err != ESP_OK)
             ESP_LOGE(TAG, "%s: Error posting event: %s", __func__, esp_err_to_name(err));
         break;
@@ -341,6 +351,11 @@ static void evloop_http_event(void *handler_arg, esp_event_base_t base, int32_t 
         ESP_LOGI(TAG, "%s: socket %d closed", __func__, socfd);
         socket_closed_list.push_back(socfd);
         par_cleanup();
+        break;
+    case HTTP_SERVER_EVENT_ON_CONNECTED:
+        flags = fcntl(socfd, F_GETFL);
+        if (fcntl(socfd, F_SETFL, flags | O_NONBLOCK) == -1)
+            ESP_LOGE(TAG, "Unable to set socket %d non blocking", socfd);
         break;
     default:
         break;
@@ -518,7 +533,7 @@ void register_files(const char *basePath, const char *path)
         }
 
         snprintf(fullPath, 10000, "%s/%s", path, entry->d_name);
-        
+
         // Use stat to fill in the statbuf structure with information about the file/directory
         if (stat(fullPath, &statbuf) == -1)
         {
@@ -535,7 +550,7 @@ void register_files(const char *basePath, const char *path)
         {
             // Register URL for files, adjusting the path as before
             httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET, NULL);
-            
+
             // If the url ends with .gz, register the url without the .gz
             if (strstr(fullPath, ".gz") != NULL)
             {
@@ -554,9 +569,9 @@ void serviceweb_init()
     esp_event_loop_args_t loop_args = {
         .queue_size = 40,
         .task_name = "servweb",
-        .task_priority = 4,
+        .task_priority = 19,
         .task_stack_size = 1024 * 10,
-        .task_core_id = 1};
+        .task_core_id = 0};
 
     evloop.base = SERVWEB_EVENTS;
     esp_event_loop_create(&loop_args, &evloop.loop_handle);
@@ -574,6 +589,7 @@ void serviceweb_start(void)
     const char *path = "/spiffs/";
     register_files(path, path);
 
+    ESP_ERROR_CHECK(esp_event_handler_instance_register(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_ON_CONNECTED, &evloop_http_event, NULL, NULL));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_DISCONNECTED, &evloop_http_event, NULL, NULL));
     ESP_ERROR_CHECK(esp_event_handler_instance_register_with(evloop.loop_handle, evloop.base, CMD_SOCKET_CLOSED, &evloop_http_event, NULL, NULL));
     ESP_ERROR_CHECK(esp_event_handler_instance_register_with(evloop.loop_handle, evloop.base, CMD_WS_HANDLER, &evloop_ws_handler, NULL, NULL));
