@@ -11,7 +11,7 @@
 
 static const char *nvs_namespace = "";
 static const char *TAG = "SYSMON";
-static const char *doc_start_to_body = "<!DOCTYPE html> \
+static const char *HTML_DOC_START_TO_BODY = "<!DOCTYPE html> \
 <html><head>\
 <title>PARAMS</title>\
 <style>\
@@ -34,14 +34,14 @@ tr:nth-child(even) {background-color: #f2f2f2;}\
 </style>\
 </head>\
 <body>";
-static const char *button = "<button onclick=\"window.location.href='http://%s/metrics?%s'\">%s</button>";
+static const char *HTML_BUTTON = "<button onclick=\"window.location.href='http://%s/metrics?%s'\">%s</button>";
 static const char *hdr_public_var_begin = "<h3>System Monitor - Public Variables</h3><table>";
 static const char *hdr_nvs_var_begin = "<h3>System Monitor - Non Volatile Storage Variables</h3><table>";
 static const char *hdr_tasks_begin = "<h3>System Monitor - Tasks</h3><table>";
 // static const char *hdr_discovery_begin = "<h3>System Monitor - Discovery</h3><table>";
 static const char *hdr_memory_begin = "<h3>System Monitor - Memory</h3><table>";
 static const char *hdr_table_end = "</table>";
-static const char *doc_body_to_end = "<script type=\"text/javascript\">\
+static const char *HTML_DOC_BODY_TO_END = "<script type=\"text/javascript\">\
     const el = document.getElementsByClassName(\"json\");\
     for(var i = 0; i < el.length; i++)\
         el[i].innerHTML = JSON.stringify(JSON.parse(el[i].innerHTML), undefined, 4);\
@@ -54,17 +54,17 @@ static void print_buttons(httpd_req_t *req, char *buf, size_t bufsize)
 {
     const char *p = ethernet_get_ip();
 
-    snprintf(buf, bufsize, button, p, "nvs=true", "Configuration");
+    snprintf(buf, bufsize, HTML_BUTTON, p, "nvs=true", "Configuration");
     httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
-    snprintf(buf, bufsize, button, p, "public=true", "Public Parameters");
+    snprintf(buf, bufsize, HTML_BUTTON, p, "public=true", "Public Parameters");
     httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
-    // snprintf(buf, bufsize, button, p, "web_clients=true", "Web Clients");
+    // snprintf(buf, bufsize, HTML_BUTTON, p, "web_clients=true", "Web Clients");
     // httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
-    snprintf(buf, bufsize, button, p, "tasks=1", "Tasks");
+    snprintf(buf, bufsize, HTML_BUTTON, p, "tasks=1", "Tasks");
     httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
-    snprintf(buf, bufsize, button, p, "memory=1", "Memory");
+    snprintf(buf, bufsize, HTML_BUTTON, p, "memory=1", "Memory");
     httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
-    // snprintf(buf, bufsize, button, p, "discovery=1", "Discovery");
+    // snprintf(buf, bufsize, HTML_BUTTON, p, "discovery=1", "Discovery");
     // httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
 }
 
@@ -197,7 +197,7 @@ static void print_tasks(httpd_req_t *req, char *buf, size_t bufsize, const char 
     *buf = 0x00;
 
     uxArraySize = uxTaskGetNumberOfTasks();
-    pxTaskStatusArray = (TaskStatus_t*)pvPortMalloc(uxArraySize * sizeof(TaskStatus_t));
+    pxTaskStatusArray = (TaskStatus_t *)pvPortMalloc(uxArraySize * sizeof(TaskStatus_t));
 
     if (pxTaskStatusArray != NULL)
     {
@@ -233,7 +233,7 @@ static void print_tasks(httpd_req_t *req, char *buf, size_t bufsize, const char 
                         pxTaskStatus->uxBasePriority,
                         ulStatsAsPercentage,
                         pxTaskStatus->usStackHighWaterMark, 0);
-                        //pxTaskStatus->xCoreID);
+                // pxTaskStatus->xCoreID);
                 httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
                 buf += strlen((char *)buf);
             }
@@ -287,15 +287,15 @@ static void print_memory(httpd_req_t *req, char *buf, size_t bufsize)
 esp_err_t sysmon_get_handler(httpd_req_t *req)
 {
     const int bufsize = 4096;
-    char *buf = (char*) calloc(bufsize, sizeof(char));
+    char *buf = (char *)calloc(bufsize, sizeof(char));
 
-    httpd_resp_send_chunk(req, doc_start_to_body, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, HTML_DOC_START_TO_BODY, HTTPD_RESP_USE_STRLEN);
     print_buttons(req, buf, bufsize);
 
     const int buf_len = httpd_req_get_url_query_len(req) + 1;
     if (buf_len > 1)
     {
-        char *buf1 = (char*) malloc(buf_len);
+        char *buf1 = (char *)malloc(buf_len);
         if (httpd_req_get_url_query_str(req, buf1, buf_len) == ESP_OK)
         {
             char param[32];
@@ -313,7 +313,85 @@ esp_err_t sysmon_get_handler(httpd_req_t *req)
         free(buf1);
     }
 
-    httpd_resp_send_chunk(req, doc_body_to_end, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, HTML_DOC_BODY_TO_END, HTTPD_RESP_USE_STRLEN);
+    httpd_resp_send_chunk(req, buf, 0);
+
+    free(buf);
+
+    return ESP_OK;
+}
+
+#include <dirent.h>
+#include <sys/stat.h>
+static bool listFilesRecursively(httpd_req_t *req, char *buf, size_t buf_size, const char *basePath)
+{
+    struct dirent *dp;
+    DIR *dir = opendir(basePath);
+
+    if (!dir)
+    {
+        ESP_LOGE(TAG, "Unable to open directory stream to %s", basePath);
+        return false;
+    }
+    char *path = (char *)malloc(1000 * sizeof(char));
+
+    while ((dp = readdir(dir)) != NULL)
+    {
+        if (strcmp(dp->d_name, ".") != 0 && strcmp(dp->d_name, "..") != 0)
+        {
+            // Construct new path from our base path
+            strcpy(path, basePath);
+            strcat(path, "/");
+            strcat(path, dp->d_name);
+
+            struct stat path_stat;
+            stat(path, &path_stat);
+
+            if (S_ISREG(path_stat.st_mode))
+            {
+                snprintf(buf, buf_size, "<div>%s</div>", path);
+                httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
+            }
+            else if (S_ISDIR(path_stat.st_mode))
+            {
+                listFilesRecursively(req, buf, buf_size, path);
+            }
+        }
+    }
+
+    free(path);
+    closedir(dir);
+
+    return true;
+}
+
+esp_err_t file_listdir_handler(httpd_req_t *req)
+{
+    const int bufsize = 4096;
+    char *buf = (char *)calloc(bufsize, sizeof(char));
+
+    httpd_resp_send_chunk(req, HTML_DOC_START_TO_BODY, HTTPD_RESP_USE_STRLEN);
+
+    const char *p = ethernet_get_ip();
+    const char *BUTTON = "<button onclick=\"window.location.href='http://%s/listdir?dir=%s'\">%s</button>";
+
+    snprintf(buf, bufsize, BUTTON, p, "/spiffs", "spiffs");
+    httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
+
+    const int buf_len = httpd_req_get_url_query_len(req) + 1;
+    if (buf_len > 1)
+    {
+        char *buf1 = (char *)malloc(buf_len);
+        if (httpd_req_get_url_query_str(req, buf1, buf_len) == ESP_OK)
+        {
+            char param[32];
+            if (httpd_query_key_value(buf1, "dir", param, sizeof(param)) == ESP_OK)
+                listFilesRecursively(req, buf, bufsize, param);
+        }
+        free(buf1);
+    }
+
+    httpd_resp_send_chunk(req, HTML_DOC_BODY_TO_END, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, buf, 0);
 
     free(buf);

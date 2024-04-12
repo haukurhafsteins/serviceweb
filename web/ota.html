@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>OTA Update</title>
+</head>
+<body>
+    <h2>MASI-Air Firmware Update</h2>
+    <form method="POST" action="/update" enctype="multipart/form-data" id="upload_form">
+        <input type="file" name="update" required>
+        <input type="submit" value="Update">
+    </form>
+    <div id="prg">Progress: 0%</div>
+    <script>
+        document.getElementById('upload_form').addEventListener('submit', function (evt) {
+            evt.preventDefault(); // Prevent normal form submission
+
+            var prg = document.getElementById('prg');
+            var formData = new FormData(evt.target); // Create formData object from form
+
+            var xhr = new XMLHttpRequest();
+            xhr.open('POST', '/update', true);
+
+            xhr.upload.addEventListener('progress', function (evt) {
+                if (evt.lengthComputable) {
+                    var per = evt.loaded / evt.total;
+                    prg.innerHTML = 'Progress: ' + (per * 100).toFixed(2) + '%';
+                }
+            }, false);
+
+            xhr.upload.addEventListener('load', function (evt) {
+                prg.innerHTML = 'Update complete! Please wait for the ESP32 to reboot.';
+            }, false);
+
+            xhr.send(formData); // Send formData through XHR
+
+            return false; // Just to be doubly sure the form doesn't submit the old-fashioned way
+        });
+    </script>
+</body>
+</html>

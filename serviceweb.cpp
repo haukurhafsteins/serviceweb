@@ -30,7 +30,9 @@ enum
 };
 
 extern esp_err_t ota_post_handler(httpd_req_t *req);
+extern esp_err_t file_ota_get(httpd_req_t *req);
 extern esp_err_t file_upload_handler(httpd_req_t *req);
+extern esp_err_t file_upload_get(httpd_req_t *req);
 extern esp_err_t sysmon_get_handler(httpd_req_t *req);
 extern esp_err_t file_listdir_handler(httpd_req_t *req);
 
@@ -582,7 +584,9 @@ void serviceweb_start(void)
     // httpss_register_url("/", false, get_index, HTTP_GET, NULL);
     httpss_register_url("/ws", true, ws_handler, HTTP_GET, NULL);
     httpss_register_url("/update", false, ota_post_handler, HTTP_POST, NULL);
-    httpss_register_url("/upload/*", false, file_upload_handler, HTTP_POST, NULL);
+    httpss_register_url("/upload.html", false, file_upload_get, HTTP_GET, NULL);
+    httpss_register_url("/ota.html", false, file_ota_get, HTTP_GET, NULL);
+    httpss_register_url("/upload?*", false, file_upload_handler, HTTP_POST, NULL);
     httpss_register_url("/metrics", false, sysmon_get_handler, HTTP_GET, NULL);
     httpss_register_url("/listdir", false, file_listdir_handler, HTTP_GET, NULL);
 

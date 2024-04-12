@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
 #include "esp_log.h"
 #include "esp_vfs.h"
 #include "esp_http_server.h"
@@ -12,29 +13,86 @@ const static char *TAG = "spiffs";
 
 static char boundary[BOUNDARY_MAX_LEN];
 
+extern const uint8_t upload_html_start[] asm("_binary_upload_html_start");
+extern const uint8_t upload_html_end[] asm("_binary_upload_html_end");
+
+esp_err_t file_upload_get(httpd_req_t *req)
+{
+    char buf[16]; // dummy buffer
+    httpd_resp_send_chunk(req, (char *)upload_html_start, upload_html_end - upload_html_start);
+    return httpd_resp_send_chunk(req, buf, 0);
+
+}
+
 esp_err_t file_upload_handler(httpd_req_t *req)
 {
     char filepath[FILE_PATH_MAX];
     FILE *f = NULL;
     esp_err_t res = ESP_OK;
+    char destination[32];
+    char filename[32];
 
-    // Extract filename from the URI
-    // req->uri will contain the path, e.g., /upload/filename.txt
-    const char *uri_start = req->uri + strlen("/upload/"); // Skip the /upload/ part to get the filename
-    if (*uri_start == '\0')
+    const int buf_len = httpd_req_get_url_query_len(req) + 1;
+    if (buf_len > 1)
     {
-        // Handle case where no filename is provided in the URL
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename is required");
-        ESP_LOGE(TAG, "Filename is required, but not provided in the URL: %s", req->uri);
+        char *buf1 = (char *)malloc(buf_len);
+        if (httpd_req_get_url_query_str(req, buf1, buf_len) != ESP_OK)
+        {
+            ESP_LOGI(TAG, "Unable to get query string");
+            free(buf1);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unable to get query string");
+            return ESP_FAIL;
+        }
+        else
+        {
+            if (httpd_query_key_value(buf1, "destination", destination, sizeof(destination)) != ESP_OK)
+            {
+                ESP_LOGI(TAG, "Destination not found in URL query %s", buf1);
+                free(buf1);
+                httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Destination not found in URL query");
+                return ESP_FAIL;
+            }
+            if (httpd_query_key_value(buf1, "filename", filename, sizeof(filename)) != ESP_OK)
+            {
+                ESP_LOGI(TAG, "Filename not found in URL query %s", buf1);
+                free(buf1);
+                httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename not found in URL query");
+                return ESP_FAIL;
+            }
+        }
+        free(buf1);
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Query not found");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Query not found");
         return ESP_FAIL;
     }
 
     // Ensure the filename does not exceed our buffer size and construct the full path
-    if (snprintf(filepath, sizeof(filepath), "/spiffs/%s", uri_start) >= sizeof(filepath))
+    if (snprintf(filepath, sizeof(filepath), "/spiffs/%s/%s", destination, filename) >= sizeof(filepath))
     {
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename is too long");
         return ESP_FAIL;
     }
+
+    // Make sure the folder structure exists, if not, create folders in a normal way with mkdir
+    char *slash = strrchr(filepath, '/');
+    if (slash)
+    {
+        *slash = '\0';
+        if (mkdir(filepath, 0777) != 0)
+        {
+            if (errno != EEXIST)
+            {
+                ESP_LOGE(TAG, "Failed to create folder %s", filepath);
+                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create folder");
+                return ESP_FAIL;
+            }
+        }
+        *slash = '/';
+    }
+    
 
     static char buf[BUFFSIZE];
     int received = 0;
@@ -146,11 +204,9 @@ esp_err_t file_upload_handler(httpd_req_t *req)
         if (data_start && received > 0)
         {
             fwrite(data_start, 1, received, f);
-            printf("Wrote %d bytes\n", received);
         }
     }
 
     fclose(f);
     return res;
 }
-
