@@ -53,11 +53,27 @@ ESP_EVENT_DEFINE_BASE(SERVWEB_EVENTS);
 
 static void evloop_newstate(void *handler_arg, esp_event_base_t base, int32_t id, void *context);
 
+static size_t get_file_size(FILE *file)
+{
+    fseek(file, 0, SEEK_END);
+    size_t size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    return size;
+}
+
 static esp_err_t resp_file(httpd_req_t *req, const char *filename)
 {
+    printf("resp_file: %s\n", filename);
+
     int read = 0;
-    const int bufsize = 1024;
+    const int bufsize = 2048;
     char *buf = (char *)calloc(bufsize, sizeof(char));
+    if (buf == NULL)
+    {
+        ESP_LOGE(TAG, "Error allocating memory for buffer when serving file %s", filename);
+        return ESP_FAIL;
+    }
+
     bool gzip_supported = false;
 
     char encoding[64];
@@ -81,6 +97,8 @@ static esp_err_t resp_file(httpd_req_t *req, const char *filename)
         }
     }
 
+    size_t file_size = get_file_size(file);
+
     // ESP_LOGW(TAG, "Serving %s", buf);
 
     if (strstr(filename, ".html") != NULL)
@@ -97,13 +115,20 @@ static esp_err_t resp_file(httpd_req_t *req, const char *filename)
         httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
     }
 
-    while ((read = fread(buf, 1, bufsize, file)) > 0)
+    if (file_size <= bufsize)
     {
-        httpd_resp_send_chunk(req, buf, read);
+        if ((read = fread(buf, 1, bufsize, file)) > 0)
+            httpd_resp_send(req, buf, file_size);
     }
-
-    httpd_resp_set_hdr(req, "Connection", "close");
-    httpd_resp_send_chunk(req, buf, 0);
+    else
+    {
+        while ((read = fread(buf, 1, bufsize, file)) > 0)
+        {
+            httpd_resp_send_chunk(req, buf, read);
+        }
+        httpd_resp_set_hdr(req, "Connection", "close");
+        httpd_resp_send_chunk(req, buf, 0);
+    }
 
     fclose(file);
 
@@ -366,7 +391,7 @@ static void evloop_http_event(void *handler_arg, esp_event_base_t base, int32_t 
 
 static esp_err_t ws_handler(httpd_req_t *req)
 {
-    // ESP_LOGI(TAG, "%s: method is %d", __func__, req->method);
+    printf("ws_handler\n");
 
     if (req->method == HTTP_GET)
         return ESP_OK;
