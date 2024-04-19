@@ -1,5 +1,6 @@
 #include <dirent.h>
 #include <stdio.h>
+#include <unistd.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <errno.h>
@@ -63,16 +64,15 @@ static size_t get_file_size(FILE *file)
 
 static esp_err_t resp_file(httpd_req_t *req, const char *filename)
 {
-    printf("resp_file: %s\n", filename);
-
+    esp_err_t err;
     int read = 0;
     const int bufsize = 2048;
     char *buf = (char *)calloc(bufsize, sizeof(char));
-    if (buf == NULL)
-    {
-        ESP_LOGE(TAG, "Error allocating memory for buffer when serving file %s", filename);
-        return ESP_FAIL;
-    }
+     if (buf == NULL)
+     {
+         ESP_LOGE(TAG, "Error allocating memory for buffer when serving file %s", filename);
+         return ESP_FAIL;
+     }
 
     bool gzip_supported = false;
 
@@ -85,7 +85,7 @@ static esp_err_t resp_file(httpd_req_t *req, const char *filename)
     FILE *file = fopen(buf, "rb");
     if (file == NULL)
     {
-        ESP_LOGE(TAG, "File %s does not exist, going for non .gz file...", buf);
+        //ESP_LOGE(TAG, "File %s does not exist, going for non .gz file...", buf);
         gzip_supported = false;
         snprintf(buf, bufsize, "/spiffs%s", filename);
         file = fopen(buf, "rb");
@@ -109,10 +109,43 @@ static esp_err_t resp_file(httpd_req_t *req, const char *filename)
         httpd_resp_set_type(req, "text/css");
     else if (strstr(filename, ".svg") != NULL)
         httpd_resp_set_type(req, "image/svg+xml");
+    else if (strstr(filename, ".png") != NULL)
+        httpd_resp_set_type(req, "image/png");
+    else if (strstr(filename, ".jpg") != NULL)
+        httpd_resp_set_type(req, "image/jpeg");
+    else if (strstr(filename, ".ico") != NULL)
+        httpd_resp_set_type(req, "image/x-icon");
+    else if (strstr(filename, ".json") != NULL)
+        httpd_resp_set_type(req, "application/json");
+    else if (strstr(filename, ".xml") != NULL)
+        httpd_resp_set_type(req, "application/xml");
+    else if (strstr(filename, ".pdf") != NULL)
+        httpd_resp_set_type(req, "application/pdf");
+    else if (strstr(filename, ".zip") != NULL)
+        httpd_resp_set_type(req, "application/zip");
+    else if (strstr(filename, ".txt") != NULL)
+        httpd_resp_set_type(req, "text/plain");
+    else
+        httpd_resp_set_type(req, "application/octet-stream");
 
     if (gzip_supported)
     {
-        httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+        err = httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Error setting gzip header for file %s: %s", filename, esp_err_to_name(err));
+            fclose(file);
+            free(buf);
+            return ESP_FAIL;
+        }
+    }
+    err = httpd_resp_set_hdr(req, "Connection", "close");
+    if (err != ESP_OK)
+    {
+        ESP_LOGE(TAG, "Error setting connection header for file %s: %s", filename, esp_err_to_name(err));
+        fclose(file);
+        free(buf);
+        return ESP_FAIL;
     }
 
     if (file_size <= bufsize)
@@ -124,10 +157,16 @@ static esp_err_t resp_file(httpd_req_t *req, const char *filename)
     {
         while ((read = fread(buf, 1, bufsize, file)) > 0)
         {
-            httpd_resp_send_chunk(req, buf, read);
+            err = httpd_resp_send_chunk(req, buf, read);
+            if (err != ESP_OK)
+            {
+                ESP_LOGE(TAG, "Error sending chunk for file %s: %s", filename, esp_err_to_name(err));
+                break;
+            }
         }
-        httpd_resp_set_hdr(req, "Connection", "close");
-        httpd_resp_send_chunk(req, buf, 0);
+        err = httpd_resp_send_chunk(req, buf, 0);
+        if (err != ESP_OK)
+            ESP_LOGE(TAG, "Error sending last chunk for file %s: %s", filename, esp_err_to_name(err));
     }
 
     fclose(file);
@@ -380,9 +419,9 @@ static void evloop_http_event(void *handler_arg, esp_event_base_t base, int32_t 
         par_cleanup();
         break;
     case HTTP_SERVER_EVENT_ON_CONNECTED:
-        flags = fcntl(socfd, F_GETFL);
-        if (fcntl(socfd, F_SETFL, flags | O_NONBLOCK) == -1)
-            ESP_LOGE(TAG, "Unable to set socket %d non blocking", socfd);
+        // flags = fcntl(socfd, F_GETFL);
+        // if (fcntl(socfd, F_SETFL, flags | O_NONBLOCK) == -1)
+        //     ESP_LOGE(TAG, "Unable to set socket %d non blocking", socfd);
         break;
     default:
         break;
@@ -391,8 +430,6 @@ static void evloop_http_event(void *handler_arg, esp_event_base_t base, int32_t 
 
 static esp_err_t ws_handler(httpd_req_t *req)
 {
-    printf("ws_handler\n");
-
     if (req->method == HTTP_GET)
         return ESP_OK;
 
@@ -596,7 +633,7 @@ void serviceweb_init()
     esp_event_loop_args_t loop_args = {
         .queue_size = 40,
         .task_name = "servweb",
-        .task_priority = 19,
+        .task_priority = 4,
         .task_stack_size = 1024 * 10,
         .task_core_id = 0};
 
