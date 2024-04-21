@@ -405,7 +405,6 @@ static void evloop_http_event(void *handler_arg, esp_event_base_t base, int32_t 
 {
     esp_err_t err;
     int socfd = *(int *)context;
-    int flags;
     switch (id)
     {
     case HTTP_SERVER_EVENT_DISCONNECTED:
@@ -414,14 +413,10 @@ static void evloop_http_event(void *handler_arg, esp_event_base_t base, int32_t 
             ESP_LOGE(TAG, "%s: Error posting event: %s", __func__, esp_err_to_name(err));
         break;
     case CMD_SOCKET_CLOSED:
-        ESP_LOGI(TAG, "%s: socket %d closed", __func__, socfd);
         socket_closed_list.push_back(socfd);
         par_cleanup();
         break;
     case HTTP_SERVER_EVENT_ON_CONNECTED:
-        // flags = fcntl(socfd, F_GETFL);
-        // if (fcntl(socfd, F_SETFL, flags | O_NONBLOCK) == -1)
-        //     ESP_LOGE(TAG, "Unable to set socket %d non blocking", socfd);
         break;
     default:
         break;
