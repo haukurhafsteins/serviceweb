@@ -13,7 +13,7 @@
 #include "cJSON.h"
 #include "pp.h"
 
-#define RECV_BUFFER_SIZE 4096
+#define RECV_BUFFER_SIZE 8192
 #define MAX_FLOAT_BYTES 80
 #define JSON_BUF_SIZE (512 * 10)
 #define SEND_TIMOEOUT_MS 50
