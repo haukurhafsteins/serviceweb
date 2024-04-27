@@ -108,7 +108,10 @@ static esp_err_t resp_file(httpd_req_t *req, const char *filename)
     else if (strstr(filename, ".css") != NULL)
         httpd_resp_set_type(req, "text/css");
     else if (strstr(filename, ".svg") != NULL)
+    {
         httpd_resp_set_type(req, "image/svg+xml");
+        httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=31536000"); // one year cache
+    }
     else if (strstr(filename, ".png") != NULL)
         httpd_resp_set_type(req, "image/png");
     else if (strstr(filename, ".jpg") != NULL)
