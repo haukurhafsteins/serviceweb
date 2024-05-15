@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Directory File Viewer</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+
+        #directoryForm, #uploadForm {
+            margin-bottom: 20px;
+        }
+
+        #fileTable {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        #fileTable th,
+        #fileTable td {
+            border: 1px solid #ddd;
+            padding: 8px;
+        }
+
+        #fileTable th {
+            background-color: #f2f2f2;
+        }
+    </style>
+</head>
+
+<body>
+    <h1>Disk Manager</h1>
+    <form id="directoryForm">
+        <label for="directory">List Directory:</label>
+        <input type="text" id="directory" name="directory" required>
+        <button type="submit">Submit</button>
+    </form>
+    
+    <h2>Upload</h2>
+    <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data" id="upload_form">
+        <input type="file" name="update" multiple required>
+        <input type="text" name="destination" placeholder="Enter destination path">
+        <input type="submit" value="Upload">
+    </form>
+    <div id="prg">Progress: 0%</div>
+
+    <table id="fileTable">
+        <thead>
+            <tr>
+                <th>Path</th>
+                <th>Size (bytes)</th>
+                <th>Last Modification Time</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+
+    <script>
+        document.getElementById('directoryForm').addEventListener('submit', function (event) {
+            event.preventDefault();
+
+            const directory = document.getElementById('directory').value;
+            var apiCmd = "/api?dir=" + directory;
+            fetch(apiCmd) // `/api?dir=${encodeURIComponent(directory)}`
+                .then(response => response.json())
+                .then(data => displayFiles(data))
+                .catch(error => console.error('Error fetching files:', error));
+        });
+
+        function displayFiles(files) {
+            const tbody = document.querySelector('#fileTable tbody');
+            tbody.innerHTML = '';
+
+            files.forEach(file => {
+                const row = document.createElement('tr');
+
+                const pathCell = document.createElement('td');
+                pathCell.textContent = file.path;
+                row.appendChild(pathCell);
+
+                const sizeCell = document.createElement('td');
+                sizeCell.textContent = file.size;
+                row.appendChild(sizeCell);
+
+                const modTimeCell = document.createElement('td');
+                const date = new Date(file.modification_time * 1000);
+                modTimeCell.textContent = date.toLocaleString();
+                row.appendChild(modTimeCell);
+
+                tbody.appendChild(row);
+            });
+        }
+    </script>
+
+    <script>
+        document.getElementById('upload_form').addEventListener('submit', function (evt) {
+            evt.preventDefault(); // Prevent normal form submission
+
+            var fileInput = document.querySelector('input[type="file"]');
+            var files = fileInput.files;
+            var destinationInput = document.querySelector('input[name="destination"]');
+            var destination = encodeURIComponent(destinationInput.value); // Encode the destination path
+            var prg = document.getElementById('prg');
+            var formData = new FormData();
+            formData.append('destination', destination); // Append destination path only once
+
+            var uploadFile = function (index) {
+                if (index >= files.length) {
+                    prg.innerHTML = 'All uploads complete!';
+                    return; // Stop when all files are uploaded
+                }
+
+                var file = files[index];
+                var filename = encodeURIComponent(file.name);
+                var actionURL = '/upload?destination=' + destination + '&filename=' + filename;
+
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', actionURL, true);
+
+                xhr.upload.addEventListener('progress', function (evt) {
+                    if (evt.lengthComputable) {
+                        var per = (evt.loaded / evt.total) * 100;
+                        prg.innerHTML = 'Progress: ' + per.toFixed(2) + '% (File ' + (index + 1) + ' of ' + files.length + ')';
+                    }
+                }, false);
+
+                xhr.upload.addEventListener('load', function (evt) {
+                    prg.innerHTML = 'Upload of file ' + (index + 1) + ' complete!';
+                    uploadFile(index + 1); // Upload the next file
+                }, false);
+
+                xhr.upload.addEventListener('error', function (evt) {
+                    prg.innerHTML = 'Error uploading file ' + (index + 1);
+                }, false);
+
+                formData.set('update', file); // Set or replace the file in formData
+                xhr.send(formData); // Send formData with the current file
+            };
+
+            uploadFile(0); // Start uploading the first file
+        });
+    </script>
+
+</body>
+
+</html>
