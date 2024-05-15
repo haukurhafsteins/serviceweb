@@ -77,6 +77,7 @@
 #include "esp_http_server.h"
 #include "cJSON.h"
 #include "httpss.h"
+#include "multipart_parser.h"
 
 #define MOUNT_POINT "/spiffs"
 #define TAG "FILE_SERVER"
@@ -140,24 +141,70 @@ static esp_err_t list_files_handler(httpd_req_t *req)
 
 static esp_err_t upload_file_handler(httpd_req_t *req) {
     char filepath[128];
-    snprintf(filepath, sizeof(filepath), "%s/%s", MOUNT_POINT, req->uri + sizeof("/api/upload/") - 1);
-
-    FILE *f = fopen(filepath, "w");
-    if (!f) {
-        ESP_LOGE(TAG, "Failed to open file for writing : %s", filepath);
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file for writing");
+    const char *boundary = strrchr(req->uri, '/');
+    if (boundary == NULL) {
+        ESP_LOGE(TAG, "No boundary found in URI");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No boundary found in URI");
         return ESP_FAIL;
     }
 
-    char buf[512];
-    int ret;
-    while ((ret = httpd_req_recv(req, buf, sizeof(buf))) > 0) {
-        fwrite(buf, 1, ret, f);
+    multipart_parser_settings callbacks;
+    memset(&callbacks, 0, sizeof(callbacks));
+
+    // Allocate memory for the multipart parser
+    multipart_parser *parser = multipart_parser_init(boundary, &callbacks);
+    if (!parser) {
+        ESP_LOGE(TAG, "Failed to allocate memory for multipart parser");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to allocate memory for multipart parser");
+        return ESP_FAIL;
     }
-    fclose(f);
+
+    // Set up the parser settings for handling file data
+    callbacks.on_part_data = [](multipart_parser* p, const char *at, size_t length) -> int {
+        FILE *f = (FILE *) multipart_parser_get_data(p);
+        if (fwrite(at, 1, length, f) != length) {
+            ESP_LOGE(TAG, "Failed to write data to file");
+            return -1;
+        }
+        return 0;
+    };
+
+    // Set up the parser settings for handling part headers
+    callbacks.on_part_data_begin = [](multipart_parser* p) -> int {
+        char *filepath = (char *) multipart_parser_get_data(p);
+        FILE *f = fopen(filepath, "w");
+        if (!f) {
+            ESP_LOGE(TAG, "Failed to open file for writing : %s", filepath);
+            return -1;
+        }
+        multipart_parser_set_data(p, f);
+        return 0;
+    };
+
+    // Set up the parser settings for handling part ends
+    callbacks.on_part_data_end = [](multipart_parser* p) -> int {
+        FILE *f = (FILE *) multipart_parser_get_data(p);
+        fclose(f);
+        multipart_parser_set_data(p, NULL);
+        return 0;
+    };
+
+    // Parse the multipart data
+    int ret;
+    char buf[512];
+    while ((ret = httpd_req_recv(req, buf, sizeof(buf))) > 0) {
+        if (multipart_parser_execute(parser, buf, ret) != ret) {
+            ESP_LOGE(TAG, "Multipart parser error");
+            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Multipart parser error");
+            multipart_parser_free(parser);
+            return ESP_FAIL;
+        }
+    }
+
+    multipart_parser_free(parser);
 
     cJSON *response = cJSON_CreateObject();
-    cJSON_AddStringToObject(response, "message", "File uploaded successfully");
+    cJSON_AddStringToObject(response, "message", "Files uploaded successfully");
 
     const char *response_str = cJSON_Print(response);
     httpd_resp_set_type(req, "application/json");
@@ -245,7 +292,7 @@ static esp_err_t delete_files_handler(httpd_req_t *req)
 static esp_err_t start_file_server()
 {
     httpss_register_url("/api/list", false, list_files_handler, HTTP_GET, NULL);
-    httpss_register_url("/api/upload/*", false, upload_file_handler, HTTP_POST, NULL);
+    httpss_register_url("/api/upload", false, upload_file_handler, HTTP_POST, NULL);
     httpss_register_url("/api/delete", false, delete_files_handler, HTTP_POST, NULL);
 
     return ESP_OK;
