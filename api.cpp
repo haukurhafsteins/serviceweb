@@ -140,26 +140,35 @@ static esp_err_t list_files_handler(httpd_req_t *req)
 }
 
 static esp_err_t upload_file_handler(httpd_req_t *req) {
-    char filepath[128];
-    const char *boundary = strrchr(req->uri, '/');
-    if (boundary == NULL) {
-        ESP_LOGE(TAG, "No boundary found in URI");
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "No boundary found in URI");
+    // Get the boundary from the Content-Type header
+    char boundary[64];
+    size_t boundary_len = sizeof(boundary);
+    if (httpd_req_get_hdr_value_str(req, "Content-Type", boundary, boundary_len) != ESP_OK) {
+        ESP_LOGE(TAG, "Content-Type header not found");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content-Type header not found");
         return ESP_FAIL;
     }
+
+    // Extract boundary from Content-Type header
+    char *boundary_start = strstr(boundary, "boundary=");
+    if (!boundary_start) {
+        ESP_LOGE(TAG, "Boundary not found in Content-Type");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Boundary not found in Content-Type");
+        return ESP_FAIL;
+    }
+    boundary_start += strlen("boundary=");
+    ESP_LOGI(TAG, "Boundary: %s", boundary_start);
 
     multipart_parser_settings callbacks;
     memset(&callbacks, 0, sizeof(callbacks));
 
-    // Allocate memory for the multipart parser
-    multipart_parser *parser = multipart_parser_init(boundary, &callbacks);
+    multipart_parser *parser = multipart_parser_init(boundary_start, &callbacks);
     if (!parser) {
         ESP_LOGE(TAG, "Failed to allocate memory for multipart parser");
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to allocate memory for multipart parser");
         return ESP_FAIL;
     }
 
-    // Set up the parser settings for handling file data
     callbacks.on_part_data = [](multipart_parser* p, const char *at, size_t length) -> int {
         FILE *f = (FILE *) multipart_parser_get_data(p);
         if (fwrite(at, 1, length, f) != length) {
@@ -169,19 +178,17 @@ static esp_err_t upload_file_handler(httpd_req_t *req) {
         return 0;
     };
 
-    // Set up the parser settings for handling part headers
     callbacks.on_part_data_begin = [](multipart_parser* p) -> int {
         char *filepath = (char *) multipart_parser_get_data(p);
         FILE *f = fopen(filepath, "w");
         if (!f) {
-            ESP_LOGE(TAG, "Failed to open file for writing : %s", filepath);
+            ESP_LOGE(TAG, "Failed to open file for writing: %s", filepath);
             return -1;
         }
         multipart_parser_set_data(p, f);
         return 0;
     };
 
-    // Set up the parser settings for handling part ends
     callbacks.on_part_data_end = [](multipart_parser* p) -> int {
         FILE *f = (FILE *) multipart_parser_get_data(p);
         fclose(f);
@@ -189,7 +196,6 @@ static esp_err_t upload_file_handler(httpd_req_t *req) {
         return 0;
     };
 
-    // Parse the multipart data
     int ret;
     char buf[512];
     while ((ret = httpd_req_recv(req, buf, sizeof(buf))) > 0) {
