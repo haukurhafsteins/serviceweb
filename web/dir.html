@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Directory File Viewer and Uploader</title>
+    <title>Directory File Manager</title>
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -44,8 +44,8 @@
     </form>
 
     <form id="uploadForm" enctype="multipart/form-data">
-        <label for="fileUpload">Select file to upload:</label>
-        <input type="file" id="fileUpload" name="fileUpload" required>
+        <label for="fileUpload">Select files to upload:</label>
+        <input type="file" id="fileUpload" name="fileUpload" multiple required>
         <button type="submit">Upload</button>
     </form>
 
@@ -64,7 +64,7 @@
     </table>
 
     <script>
-        document.getElementById('directoryForm').addEventListener('submit', function (event) {
+        document.getElementById('directoryForm').addEventListener('submit', function(event) {
             event.preventDefault();
             const directory = document.getElementById('directory').value;
             fetch(`/api/list?dir=${directory}`)
@@ -73,24 +73,28 @@
                 .catch(error => console.error('Error fetching files:', error));
         });
 
-        document.getElementById('uploadForm').addEventListener('submit', function (event) {
+        document.getElementById('uploadForm').addEventListener('submit', function(event) {
             event.preventDefault();
             const fileInput = document.getElementById('fileUpload');
+            const files = fileInput.files;
             const formData = new FormData();
-            formData.append('file', fileInput.files[0]);
 
-            fetch(`/api/upload/${fileInput.files[0].name}`, {
+            for (let i = 0; i < files.length; i++) {
+                formData.append('file', files[i], files[i].name);
+            }
+
+            fetch(`/api/upload`, {
                 method: 'POST',
                 body: formData
             })
-                .then(response => response.json())
-                .then(data => {
-                    alert('File uploaded successfully');
-                    console.log(data);
-                    // Refresh the file list
-                    document.getElementById('directoryForm').dispatchEvent(new Event('submit'));
-                })
-                .catch(error => console.error('Error uploading file:', error));
+            .then(response => response.json())
+            .then(data => {
+                alert('Files uploaded successfully');
+                console.log(data);
+                // Refresh the file list
+                document.getElementById('directoryForm').dispatchEvent(new Event('submit'));
+            })
+            .catch(error => console.error('Error uploading files:', error));
         });
 
         function displayFiles(files) {
@@ -151,14 +155,14 @@
                 },
                 body: JSON.stringify({ files: selectedFiles })
             })
-                .then(response => response.json())
-                .then(data => {
-                    alert('Selected files deleted successfully');
-                    console.log(data);
-                    // Refresh the file list
-                    document.getElementById('directoryForm').dispatchEvent(new Event('submit'));
-                })
-                .catch(error => console.error('Error deleting files:', error));
+            .then(response => response.json())
+            .then(data => {
+                alert('Selected files deleted successfully');
+                console.log(data);
+                // Refresh the file list
+                document.getElementById('directoryForm').dispatchEvent(new Event('submit'));
+            })
+            .catch(error => console.error('Error deleting files:', error));
         }
     </script>
 </body>
