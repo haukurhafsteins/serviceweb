@@ -4,20 +4,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Directory File Viewer</title>
+    <title>Directory File Viewer and Uploader</title>
     <style>
         body {
             font-family: Arial, sans-serif;
             margin: 20px;
         }
 
-        #directoryForm, #uploadForm {
+        #directoryForm,
+        #uploadForm {
             margin-bottom: 20px;
         }
 
         #fileTable {
             width: 100%;
             border-collapse: collapse;
+            margin-top: 20px;
         }
 
         #fileTable th,
@@ -33,24 +35,26 @@
 </head>
 
 <body>
-    <h1>Disk Manager</h1>
+    <h1>Directory File Manager</h1>
+
     <form id="directoryForm">
-        <label for="directory">List Directory:</label>
+        <label for="directory">Directory:</label>
         <input type="text" id="directory" name="directory" required>
-        <button type="submit">Submit</button>
+        <button type="submit">List Files</button>
     </form>
-    
-    <h2>Upload</h2>
-    <form id="uploadForm" method="POST" action="/upload" enctype="multipart/form-data" id="upload_form">
-        <input type="file" name="update" multiple required>
-        <input type="text" name="destination" placeholder="Enter destination path">
-        <input type="submit" value="Upload">
+
+    <form id="uploadForm" enctype="multipart/form-data">
+        <label for="fileUpload">Select file to upload:</label>
+        <input type="file" id="fileUpload" name="fileUpload" required>
+        <button type="submit">Upload</button>
     </form>
-    <div id="prg">Progress: 0%</div>
+
+    <button id="deleteButton" onclick="deleteSelectedFiles()">Delete Selected Files</button>
 
     <table id="fileTable">
         <thead>
             <tr>
+                <th>Select</th>
                 <th>Path</th>
                 <th>Size (bytes)</th>
                 <th>Last Modification Time</th>
@@ -62,21 +66,57 @@
     <script>
         document.getElementById('directoryForm').addEventListener('submit', function (event) {
             event.preventDefault();
-
             const directory = document.getElementById('directory').value;
-            var apiCmd = "/api?dir=" + directory;
-            fetch(apiCmd) // `/api?dir=${encodeURIComponent(directory)}`
+            fetch(`/api/list?dir=${directory}`)
                 .then(response => response.json())
                 .then(data => displayFiles(data))
                 .catch(error => console.error('Error fetching files:', error));
+        });
+
+        document.getElementById('uploadForm').addEventListener('submit', function (event) {
+            event.preventDefault();
+            const fileInput = document.getElementById('fileUpload');
+            const formData = new FormData();
+            formData.append('file', fileInput.files[0]);
+
+            fetch(`/api/upload/${fileInput.files[0].name}`, {
+                method: 'POST',
+                body: formData
+            })
+                .then(response => response.json())
+                .then(data => {
+                    alert('File uploaded successfully');
+                    console.log(data);
+                    // Refresh the file list
+                    document.getElementById('directoryForm').dispatchEvent(new Event('submit'));
+                })
+                .catch(error => console.error('Error uploading file:', error));
         });
 
         function displayFiles(files) {
             const tbody = document.querySelector('#fileTable tbody');
             tbody.innerHTML = '';
 
+            // Check if the response is an error
+            if (files.message) {
+                const row = document.createElement('tr');
+                const errorCell = document.createElement('td');
+                errorCell.colSpan = 4;
+                errorCell.textContent = files.message;
+                row.appendChild(errorCell);
+                tbody.appendChild(row);
+                return;
+            }
+
             files.forEach(file => {
                 const row = document.createElement('tr');
+
+                const selectCell = document.createElement('td');
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.value = file.path;
+                selectCell.appendChild(checkbox);
+                row.appendChild(selectCell);
 
                 const pathCell = document.createElement('td');
                 pathCell.textContent = file.path;
@@ -94,57 +134,33 @@
                 tbody.appendChild(row);
             });
         }
+
+        function deleteSelectedFiles() {
+            const selectedFiles = Array.from(document.querySelectorAll('#fileTable tbody input[type="checkbox"]:checked'))
+                .map(checkbox => checkbox.value);
+
+            if (selectedFiles.length === 0) {
+                alert('No files selected for deletion.');
+                return;
+            }
+
+            fetch('/api/delete', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({ files: selectedFiles })
+            })
+                .then(response => response.json())
+                .then(data => {
+                    alert('Selected files deleted successfully');
+                    console.log(data);
+                    // Refresh the file list
+                    document.getElementById('directoryForm').dispatchEvent(new Event('submit'));
+                })
+                .catch(error => console.error('Error deleting files:', error));
+        }
     </script>
-
-    <script>
-        document.getElementById('upload_form').addEventListener('submit', function (evt) {
-            evt.preventDefault(); // Prevent normal form submission
-
-            var fileInput = document.querySelector('input[type="file"]');
-            var files = fileInput.files;
-            var destinationInput = document.querySelector('input[name="destination"]');
-            var destination = encodeURIComponent(destinationInput.value); // Encode the destination path
-            var prg = document.getElementById('prg');
-            var formData = new FormData();
-            formData.append('destination', destination); // Append destination path only once
-
-            var uploadFile = function (index) {
-                if (index >= files.length) {
-                    prg.innerHTML = 'All uploads complete!';
-                    return; // Stop when all files are uploaded
-                }
-
-                var file = files[index];
-                var filename = encodeURIComponent(file.name);
-                var actionURL = '/upload?destination=' + destination + '&filename=' + filename;
-
-                var xhr = new XMLHttpRequest();
-                xhr.open('POST', actionURL, true);
-
-                xhr.upload.addEventListener('progress', function (evt) {
-                    if (evt.lengthComputable) {
-                        var per = (evt.loaded / evt.total) * 100;
-                        prg.innerHTML = 'Progress: ' + per.toFixed(2) + '% (File ' + (index + 1) + ' of ' + files.length + ')';
-                    }
-                }, false);
-
-                xhr.upload.addEventListener('load', function (evt) {
-                    prg.innerHTML = 'Upload of file ' + (index + 1) + ' complete!';
-                    uploadFile(index + 1); // Upload the next file
-                }, false);
-
-                xhr.upload.addEventListener('error', function (evt) {
-                    prg.innerHTML = 'Error uploading file ' + (index + 1);
-                }, false);
-
-                formData.set('update', file); // Set or replace the file in formData
-                xhr.send(formData); // Send formData with the current file
-            };
-
-            uploadFile(0); // Start uploading the first file
-        });
-    </script>
-
 </body>
 
 </html>
