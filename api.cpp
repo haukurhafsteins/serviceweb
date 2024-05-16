@@ -71,7 +71,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include "esp_vfs.h"
-//#include "esp_vfs_fat.h"
+#include <errno.h>
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_http_server.h"
@@ -82,7 +82,7 @@
 #define MOUNT_POINT "/spiffs"
 #define TAG "FILE_SERVER"
 
-static esp_err_t list_files_handler(httpd_req_t *req)
+static esp_err_t file_list_all_handler(httpd_req_t *req)
 {
     char directory[128];
     size_t len = httpd_req_get_url_query_len(req) + 1;
@@ -139,90 +139,219 @@ static esp_err_t list_files_handler(httpd_req_t *req)
     return ESP_OK;
 }
 
-static esp_err_t upload_file_handler(httpd_req_t *req) {
-    // Get the boundary from the Content-Type header
-    char boundary[64];
-    size_t boundary_len = sizeof(boundary);
-    if (httpd_req_get_hdr_value_str(req, "Content-Type", boundary, boundary_len) != ESP_OK) {
-        ESP_LOGE(TAG, "Content-Type header not found");
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Content-Type header not found");
-        return ESP_FAIL;
-    }
 
-    // Extract boundary from Content-Type header
-    char *boundary_start = strstr(boundary, "boundary=");
-    if (!boundary_start) {
-        ESP_LOGE(TAG, "Boundary not found in Content-Type");
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Boundary not found in Content-Type");
-        return ESP_FAIL;
-    }
-    boundary_start += strlen("boundary=");
-    ESP_LOGI(TAG, "Boundary: %s", boundary_start);
+#define BOUNDARY_MAX_LEN 100
+#define BUFFSIZE 512
+#define FILE_PATH_MAX (ESP_VFS_PATH_MAX + 64)
 
-    multipart_parser_settings callbacks;
-    memset(&callbacks, 0, sizeof(callbacks));
+esp_err_t file_upload_handler(httpd_req_t *req)
+{
+    char filepath[FILE_PATH_MAX];
+    esp_err_t res = ESP_OK;
+    char destination[64];
+    char filename[64];
+    char boundary[BOUNDARY_MAX_LEN];
 
-    multipart_parser *parser = multipart_parser_init(boundary_start, &callbacks);
-    if (!parser) {
-        ESP_LOGE(TAG, "Failed to allocate memory for multipart parser");
-        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to allocate memory for multipart parser");
-        return ESP_FAIL;
-    }
-
-    callbacks.on_part_data = [](multipart_parser* p, const char *at, size_t length) -> int {
-        FILE *f = (FILE *) multipart_parser_get_data(p);
-        if (fwrite(at, 1, length, f) != length) {
-            ESP_LOGE(TAG, "Failed to write data to file");
-            return -1;
-        }
-        return 0;
-    };
-
-    callbacks.on_part_data_begin = [](multipart_parser* p) -> int {
-        char *filepath = (char *) multipart_parser_get_data(p);
-        FILE *f = fopen(filepath, "w");
-        if (!f) {
-            ESP_LOGE(TAG, "Failed to open file for writing: %s", filepath);
-            return -1;
-        }
-        multipart_parser_set_data(p, f);
-        return 0;
-    };
-
-    callbacks.on_part_data_end = [](multipart_parser* p) -> int {
-        FILE *f = (FILE *) multipart_parser_get_data(p);
-        fclose(f);
-        multipart_parser_set_data(p, NULL);
-        return 0;
-    };
-
-    int ret;
-    char buf[512];
-    while ((ret = httpd_req_recv(req, buf, sizeof(buf))) > 0) {
-        if (multipart_parser_execute(parser, buf, ret) != ret) {
-            ESP_LOGE(TAG, "Multipart parser error");
-            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Multipart parser error");
-            multipart_parser_free(parser);
+    // Retrieve the URL query string length
+    const int buf_len = httpd_req_get_url_query_len(req) + 1;
+    if (buf_len > 1)
+    {
+        char *buf1 = (char *)malloc(buf_len);
+        if (httpd_req_get_url_query_str(req, buf1, buf_len) != ESP_OK)
+        {
+            ESP_LOGI(TAG, "Unable to get query string");
+            free(buf1);
+            httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unable to get query string");
             return ESP_FAIL;
         }
+        else
+        {
+            if (httpd_query_key_value(buf1, "dir", destination, sizeof(destination)) != ESP_OK)
+            {
+                ESP_LOGI(TAG, "Destination not found in URL query %s", buf1);
+                free(buf1);
+                httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Destination not found in URL query");
+                return ESP_FAIL;
+            }
+        }
+        free(buf1);
+    }
+    else
+    {
+        ESP_LOGI(TAG, "Query not found");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Query not found");
+        return ESP_FAIL;
     }
 
-    multipart_parser_free(parser);
+    static char buf[BUFFSIZE];
+    int received = 0;
+    int total_received = 0;
+    bool boundary_found = false;
 
-    cJSON *response = cJSON_CreateObject();
-    cJSON_AddStringToObject(response, "message", "Files uploaded successfully");
+    // Extract the boundary from the content type
+    if (!boundary_found)
+    {
+        if (ESP_OK == httpd_req_get_hdr_value_str(req, "Content-Type", buf, sizeof(buf)))
+        {
+            char *boundary_start = strstr(buf, "boundary=");
+            if (boundary_start)
+            {
+                snprintf(boundary, sizeof(boundary), "--%s", boundary_start + 9);
+                boundary_found = true;
+            }
+        }
+    }
 
-    const char *response_str = cJSON_Print(response);
-    httpd_resp_set_type(req, "application/json");
-    httpd_resp_sendstr(req, response_str);
+    if (!boundary_found)
+    {
+        ESP_LOGE(TAG, "Boundary not found in content type");
+        httpd_resp_send_500(req);
+        return ESP_FAIL;
+    }
 
-    cJSON_Delete(response);
-    free((void *)response_str);
+    bool is_header = true;
+    bool file_open = false;
+    FILE *f = NULL;
 
-    return ESP_OK;
+    while (1)
+    {
+        received = httpd_req_recv(req, buf, BUFFSIZE);
+        if (received <= 0)
+        {
+            if (received == HTTPD_SOCK_ERR_TIMEOUT)
+            {
+                continue;
+            }
+            else if (received == 0)
+            {
+                ESP_LOGI(TAG, "File reception complete");
+                if (file_open)
+                {
+                    printf("Closing file\n");
+                    fclose(f);
+                    file_open = false;
+                }
+                httpd_resp_sendstr(req, "File(s) uploaded successfully");
+                break;
+            }
+            else
+            {
+                ESP_LOGE(TAG, "File reception failed: %d", received);
+                res = ESP_FAIL;
+                break;
+            }
+        }
+
+        total_received += received;
+        char *data_start = NULL;
+        char *data_end = NULL;
+
+        if (is_header)
+        {
+            data_start = strstr(buf, boundary);
+            if (data_start)
+            {
+                data_start += strlen(boundary);
+                data_start = strstr(data_start, "\r\n\r\n");
+                if (data_start)
+                {
+                    data_start += 4;   // Move past the "\r\n\r\n" to the binary data start
+                    is_header = false; // subsequent segments are data
+
+                    data_end = strstr(data_start, boundary);
+                    if (data_end)
+                    {
+                        received = data_end - data_start;
+                    }
+                    else
+                    {
+                        received -= (data_start - buf);
+                    }
+
+                    // Extract filename from content-disposition
+                    char *header_start = strstr(buf, "Content-Disposition: form-data; name=\"files\"; filename=\"");
+                    if (header_start)
+                    {
+                        header_start += strlen("Content-Disposition: form-data; name=\"files\"; filename=\"");
+                        char *filename_end = strchr(header_start, '"');
+                        if (filename_end)
+                        {
+                            int filename_len = filename_end - header_start;
+                            if (filename_len < sizeof(filename))
+                            {
+                                strncpy(filename, header_start, filename_len);
+                                filename[filename_len] = '\0';
+                                printf("Filename: %s\n", filename);
+
+                                if (snprintf(filepath, sizeof(filepath), "%s/%s", destination, filename) >= sizeof(filepath))
+                                {
+                                    ESP_LOGE(TAG, "Filename is too long");
+                                    httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename is too long");
+                                    res = ESP_FAIL;
+                                    break;
+                                }
+
+                                char *slash = strrchr(filepath, '/');
+                                if (slash)
+                                {
+                                    *slash = '\0';
+                                    if (mkdir(filepath, 0777) != 0)
+                                    {
+                                        if (errno != EEXIST)
+                                        {
+                                            ESP_LOGE(TAG, "Failed to create folder %s", filepath);
+                                            httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create folder");
+                                            res = ESP_FAIL;
+                                            break;
+                                        }
+                                    }
+                                    *slash = '/';
+                                }
+
+                                unlink(filepath);
+                                f = fopen(filepath, "w");
+                                if (!f)
+                                {
+                                    ESP_LOGE(TAG, "Failed to open file for writing");
+                                    httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file for writing");
+                                    res = ESP_FAIL;
+                                    break;
+                                }
+                                printf("File opened: %s\n", filepath);
+                                file_open = true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        else
+        {
+            data_end = strstr(buf, boundary);
+            if (data_end)
+            {
+                received = data_end - buf;
+                is_header = true;
+            }
+            data_start = buf;
+        }
+
+        if (data_start && received > 0 && file_open)
+        {
+            fwrite(data_start, 1, received, f);
+        }
+    }
+
+    if (file_open)
+    {
+        printf("Closing file at end\n");
+        fclose(f);
+    }
+
+    return res;
 }
 
-static esp_err_t delete_files_handler(httpd_req_t *req)
+static esp_err_t file_delete_handler(httpd_req_t *req)
 {
     char buf[512];
     int total_len = req->content_len;
@@ -297,9 +426,9 @@ static esp_err_t delete_files_handler(httpd_req_t *req)
 
 static esp_err_t start_file_server()
 {
-    httpss_register_url("/api/list", false, list_files_handler, HTTP_GET, NULL);
-    httpss_register_url("/api/upload", false, upload_file_handler, HTTP_POST, NULL);
-    httpss_register_url("/api/delete", false, delete_files_handler, HTTP_POST, NULL);
+    httpss_register_url("/api/list", false, file_list_all_handler, HTTP_GET, NULL);
+    httpss_register_url("/api/upload", false, file_upload_handler, HTTP_POST, NULL);
+    httpss_register_url("/api/delete", false, file_delete_handler, HTTP_POST, NULL);
 
     return ESP_OK;
 }
