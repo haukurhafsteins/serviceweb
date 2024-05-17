@@ -68,58 +68,124 @@ static bool get_boundary(httpd_req_t *req, char *boundary, size_t boundary_len)
     return false;
 }
 
-esp_err_t file_upload_handler(httpd_req_t *req)
+static FILE *create_file(httpd_req_t *req, const char *filename, char *destination)
 {
     char filepath[FILE_PATH_MAX];
+    if (snprintf(filepath, sizeof(filepath), "%s/%s", destination, filename) >= sizeof(filepath))
+    {
+        ESP_LOGE(TAG, "Filename is too long");
+        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename is too long");
+        return NULL;
+    }
+
+    char *slash = strrchr(filepath, '/');
+    if (slash)
+    {
+        *slash = '\0';
+        if (mkdir(filepath, 0777) != 0)
+        {
+            if (errno != EEXIST)
+            {
+                ESP_LOGE(TAG, "Failed to create folder %s", filepath);
+                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create folder");
+                return NULL;
+            }
+        }
+        *slash = '/';
+    }
+
+    unlink(filepath);
+    FILE *f = fopen(filepath, "w");
+    if (!f)
+    {
+        ESP_LOGE(TAG, "Failed to open file for writing");
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file for writing");
+        return NULL;
+    }
+    printf("File opened: %s\n", filepath);
+    return f;
+}
+
+static bool extract_filename_from_content_disposition(httpd_req_t req, char *buf, char *filename, size_t filename_len)
+{
+    char *header_start = strstr(buf, "Content-Disposition: form-data; name=\"files\"; filename=\"");
+    if (header_start)
+    {
+        header_start += strlen("Content-Disposition: form-data; name=\"files\"; filename=\"");
+        char *filename_end = strchr(header_start, '"');
+        if (filename_end)
+        {
+            int len = filename_end - header_start;
+            if (len < filename_len)
+            {
+                strncpy(filename, header_start, len);
+                filename[len] = '\0';
+                printf("Filename: %s\n", filename);
+                return true;
+            }
+        }
+    }
+
+    ESP_LOGE(TAG, "Filename not found in content disposition");
+    httpd_resp_send_500(&req);
+    return false;
+}
+
+static bool write_to_file(FILE *f, char *data_start, char *data_end, char *boundary, char *buf, int received)
+{
+    data_end = strstr(data_start, boundary);
+    if (data_end)
+    {
+        fwrite(data_start, 1, data_end - data_start, f);
+        fclose(f);
+        ESP_LOGI(TAG, "File reception complete");
+        return false;
+    }
+    fwrite(data_start, 1, buf + received - data_start, f);
+    printf("Wrote %d bytes to file\n", buf + received - data_start);
+    return true;
+}
+
+static void file_upload_complete(httpd_req_t *req)
+{
+    ESP_LOGI(TAG, "File upload complete, last file closed");
+    httpd_resp_sendstr(req, "File uploaded successfully");
+}
+
+esp_err_t file_upload_handler(httpd_req_t *req)
+{
     esp_err_t res = ESP_OK;
     char destination[64];
-    char filename[64];
     char boundary[BOUNDARY_MAX_LEN];
 
     if (!get_directory_destination(req, destination, sizeof(destination)))
-    {
         return ESP_FAIL;
-    }
-
-    static char buf[BUFFSIZE];
-    int received = 0;
 
     if (!get_boundary(req, boundary, sizeof(boundary)))
-    {
         return ESP_FAIL;
-    }
 
-    bool is_header = true;
     bool file_open = false;
+    static char buf[BUFFSIZE];
+    int received = 0;
     FILE *f = NULL;
+
+    printf("---- Starting file upload handler ----\n");
 
     while (1)
     {
         received = httpd_req_recv(req, buf, BUFFSIZE);
-        if (received <= 0)
+        if (received == HTTPD_SOCK_ERR_TIMEOUT)
+            continue;
+        else if (received < 0)
         {
-            if (received == HTTPD_SOCK_ERR_TIMEOUT)
-            {
-                continue;
-            }
-            else if (received == 0)
-            {
-                ESP_LOGI(TAG, "File reception complete %d", file_open);
-                if (file_open)
-                {
-                    printf("Closing file\n");
-                    fclose(f);
-                    file_open = false;
-                }
-                httpd_resp_sendstr(req, "File(s) uploaded successfully");
-                break;
-            }
-            else
-            {
-                ESP_LOGE(TAG, "File reception failed: %d", received);
-                res = ESP_FAIL;
-                break;
-            }
+            ESP_LOGE(TAG, "File reception failed: %d", received);
+            res = ESP_FAIL;
+            break;
+        }
+        else if (received == 0)
+        {
+            file_upload_complete(req);
+            break;
         }
 
         char *data_start = buf;
@@ -127,7 +193,7 @@ esp_err_t file_upload_handler(httpd_req_t *req)
 
         while (data_start < buf + received)
         {
-            if (is_header)
+            if (!file_open)
             {
                 char *boundary_start = strstr(data_start, boundary);
                 if (boundary_start)
@@ -137,61 +203,16 @@ esp_err_t file_upload_handler(httpd_req_t *req)
                     if (header_end)
                     {
                         data_start = header_end + 4; // Move past the "\r\n\r\n" to the binary data start
-                        is_header = false;           // subsequent segments are data
-
-                        // Extract filename from content-disposition
-                        char *header_start = strstr(buf, "Content-Disposition: form-data; name=\"files\"; filename=\"");
-                        if (header_start)
+                        char filename[64];
+                        if (extract_filename_from_content_disposition(*req, buf, filename, sizeof(filename)))
                         {
-                            header_start += strlen("Content-Disposition: form-data; name=\"files\"; filename=\"");
-                            char *filename_end = strchr(header_start, '"');
-                            if (filename_end)
+                            if ((f = create_file(req, filename, destination)) == NULL)
                             {
-                                int filename_len = filename_end - header_start;
-                                if (filename_len < sizeof(filename))
-                                {
-                                    strncpy(filename, header_start, filename_len);
-                                    filename[filename_len] = '\0';
-                                    printf("Filename: %s\n", filename);
-
-                                    if (snprintf(filepath, sizeof(filepath), "%s/%s", destination, filename) >= sizeof(filepath))
-                                    {
-                                        ESP_LOGE(TAG, "Filename is too long");
-                                        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename is too long");
-                                        res = ESP_FAIL;
-                                        break;
-                                    }
-
-                                    char *slash = strrchr(filepath, '/');
-                                    if (slash)
-                                    {
-                                        *slash = '\0';
-                                        if (mkdir(filepath, 0777) != 0)
-                                        {
-                                            if (errno != EEXIST)
-                                            {
-                                                ESP_LOGE(TAG, "Failed to create folder %s", filepath);
-                                                httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to create folder");
-                                                res = ESP_FAIL;
-                                                break;
-                                            }
-                                        }
-                                        *slash = '/';
-                                    }
-
-                                    unlink(filepath);
-                                    f = fopen(filepath, "w");
-                                    if (!f)
-                                    {
-                                        ESP_LOGE(TAG, "Failed to open file for writing");
-                                        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file for writing");
-                                        res = ESP_FAIL;
-                                        break;
-                                    }
-                                    file_open = true;
-                                    printf("File opened: %s %d\n", filepath, file_open);
-                                }
+                                res = ESP_FAIL;
+                                break;
                             }
+
+                            file_open = true;
                         }
                     }
                 }
@@ -202,36 +223,13 @@ esp_err_t file_upload_handler(httpd_req_t *req)
             }
             else
             {
-                data_end = strstr(data_start, boundary);
-                if (data_end)
-                {
-                    if (file_open)
-                    {
-                        fwrite(data_start, 1, data_end - data_start, f);
-                        fclose(f);
-                        file_open = false;
-                        printf("File closed in second loop\n");
-                    }
-                    data_start = data_end + strlen(boundary);
-                    is_header = true;
-                }
-                else
-                {
-                    if (file_open)
-                    {
-                        fwrite(data_start, 1, buf + received - data_start, f);
-                    }
-                    data_start = buf + received; // Move to end of buffer
-                }
+                file_open = write_to_file(f, data_start, data_end, boundary, buf, received);
+                data_start =file_open ? buf + received : data_end + strlen(boundary);
+                break;
             }
         }
     }
 
-    if (file_open)
-    {
-        printf("Closing file at end\n");
-        fclose(f);
-    }
-
+    printf("---- Ending file upload handler ----\n");
     return res;
 }
