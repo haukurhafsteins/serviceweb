@@ -16,15 +16,8 @@
 #define BUFFSIZE 512
 #define FILE_PATH_MAX (ESP_VFS_PATH_MAX + 64)
 
-esp_err_t file_upload_handler(httpd_req_t *req)
+static bool get_directory_destination(httpd_req_t *req, char *destination, size_t dest_len)
 {
-    char filepath[FILE_PATH_MAX];
-    esp_err_t res = ESP_OK;
-    char destination[64];
-    char filename[64];
-    char boundary[BOUNDARY_MAX_LEN];
-
-    // Retrieve the URL query string length
     const int buf_len = httpd_req_get_url_query_len(req) + 1;
     if (buf_len > 1)
     {
@@ -34,16 +27,16 @@ esp_err_t file_upload_handler(httpd_req_t *req)
             ESP_LOGI(TAG, "Unable to get query string");
             free(buf1);
             httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Unable to get query string");
-            return ESP_FAIL;
+            return false;
         }
         else
         {
-            if (httpd_query_key_value(buf1, "dir", destination, sizeof(destination)) != ESP_OK)
+            if (httpd_query_key_value(buf1, "dir", destination, dest_len) != ESP_OK)
             {
                 ESP_LOGI(TAG, "Destination not found in URL query %s", buf1);
                 free(buf1);
                 httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Destination not found in URL query");
-                return ESP_FAIL;
+                return false;
             }
         }
         free(buf1);
@@ -52,31 +45,47 @@ esp_err_t file_upload_handler(httpd_req_t *req)
     {
         ESP_LOGI(TAG, "Query not found");
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Query not found");
+        return false;
+    }
+    return true;
+}
+
+static bool get_boundary(httpd_req_t *req, char *boundary, size_t boundary_len)
+{
+    static char buf[100];
+    if (ESP_OK == httpd_req_get_hdr_value_str(req, "Content-Type", buf, sizeof(buf)))
+    {
+        char *boundary_start = strstr(buf, "boundary=");
+        if (boundary_start)
+        {
+            snprintf(boundary, boundary_len, "--%s", boundary_start + 9);
+            return true;
+        }
+    }
+
+    ESP_LOGE(TAG, "Boundary not found in content type");
+    httpd_resp_send_500(req);
+    return false;
+}
+
+esp_err_t file_upload_handler(httpd_req_t *req)
+{
+    char filepath[FILE_PATH_MAX];
+    esp_err_t res = ESP_OK;
+    char destination[64];
+    char filename[64];
+    char boundary[BOUNDARY_MAX_LEN];
+
+    if (!get_directory_destination(req, destination, sizeof(destination)))
+    {
         return ESP_FAIL;
     }
 
     static char buf[BUFFSIZE];
     int received = 0;
-    bool boundary_found = false;
 
-    // Extract the boundary from the content type
-    if (!boundary_found)
+    if (!get_boundary(req, boundary, sizeof(boundary)))
     {
-        if (ESP_OK == httpd_req_get_hdr_value_str(req, "Content-Type", buf, sizeof(buf)))
-        {
-            char *boundary_start = strstr(buf, "boundary=");
-            if (boundary_start)
-            {
-                snprintf(boundary, sizeof(boundary), "--%s", boundary_start + 9);
-                boundary_found = true;
-            }
-        }
-    }
-
-    if (!boundary_found)
-    {
-        ESP_LOGE(TAG, "Boundary not found in content type");
-        httpd_resp_send_500(req);
         return ESP_FAIL;
     }
 
@@ -128,7 +137,7 @@ esp_err_t file_upload_handler(httpd_req_t *req)
                     if (header_end)
                     {
                         data_start = header_end + 4; // Move past the "\r\n\r\n" to the binary data start
-                        is_header = false; // subsequent segments are data
+                        is_header = false;           // subsequent segments are data
 
                         // Extract filename from content-disposition
                         char *header_start = strstr(buf, "Content-Disposition: form-data; name=\"files\"; filename=\"");
