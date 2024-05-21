@@ -131,12 +131,6 @@ static bool extract_filename_from_content_disposition(httpd_req_t req, char *buf
     return false;
 }
 
-static void file_upload_complete(httpd_req_t *req)
-{
-    ESP_LOGI(TAG, "File upload complete, last file closed");
-    httpd_resp_sendstr(req, "File uploaded successfully");
-}
-
 esp_err_t file_upload_handler(httpd_req_t *req)
 {
     esp_err_t res = ESP_OK;
@@ -153,15 +147,12 @@ esp_err_t file_upload_handler(httpd_req_t *req)
     int received = 0;
     FILE *f = NULL;
 
-    // NOTE: The espidf web server does not support multiple files in a single request and
-    // will only process the first file in the request. This is a limitation of the espidf.
-    // The following while loop will only process the first file in the request. Later when
-    // the espidf supports multiple files in a single request, this loop should work.
     while (1)
     {
         received = httpd_req_recv(req, buf, BUFFSIZE);
         if (received == HTTPD_SOCK_ERR_TIMEOUT)
             continue;
+
         else if (received < 0)
         {
             ESP_LOGE(TAG, "File reception failed: %d", received);
@@ -170,7 +161,13 @@ esp_err_t file_upload_handler(httpd_req_t *req)
         }
         else if (received == 0)
         {
-            file_upload_complete(req);
+            if (f != NULL)
+            {
+                fclose(f);
+                f = NULL;
+            }
+            ESP_LOGI(TAG, "File reception complete");
+            httpd_resp_sendstr(req, "File uploaded successfully");
             break;
         }
 
@@ -205,27 +202,31 @@ esp_err_t file_upload_handler(httpd_req_t *req)
                     data_start += received; // Move to end of buffer if no boundary is found
                 }
             }
-            else
+            
+            if (f != NULL)
             {
                 data_end = strstr(data_start, boundary);
                 if (data_end)
                 {
                     fwrite(data_start, 1, data_end - data_start, f);
                     ESP_LOGI(TAG, "File reception complete");
+                    fclose(f);
+                    f = NULL;
                     data_start = data_end + strlen(boundary);
                     break;
                 }
                 else
                 {
                     fwrite(data_start, 1, buf + received - data_start, f);
-                    printf("Wrote %d bytes to file\n", buf + received - data_start);
                     data_start = buf + received;
                 }
             }
         }
-        if (f != NULL)
-            fclose(f);
-        f = NULL;
+    }
+
+    if (f != NULL)
+    {
+        fclose(f);
     }
 
     return res;
