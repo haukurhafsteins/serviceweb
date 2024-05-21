@@ -102,16 +102,16 @@ static FILE *create_file(httpd_req_t *req, const char *filename, char *destinati
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file for writing");
         return NULL;
     }
-    printf("File opened: %s\n", filepath);
+    ESP_LOGI(TAG, "File opened: %s\n", filepath);
     return f;
 }
 
 static bool extract_filename_from_content_disposition(httpd_req_t req, char *buf, char *filename, size_t filename_len)
 {
-    char *header_start = strstr(buf, "Content-Disposition: form-data; name=\"files\"; filename=\"");
+    char *header_start = strstr(buf, "Content-Disposition: form-data; name=\"file\"; filename=\"");
     if (header_start)
     {
-        header_start += strlen("Content-Disposition: form-data; name=\"files\"; filename=\"");
+        header_start += strlen("Content-Disposition: form-data; name=\"file\"; filename=\"");
         char *filename_end = strchr(header_start, '"');
         if (filename_end)
         {
@@ -129,21 +129,6 @@ static bool extract_filename_from_content_disposition(httpd_req_t req, char *buf
     ESP_LOGE(TAG, "Filename not found in content disposition");
     httpd_resp_send_500(&req);
     return false;
-}
-
-static bool write_to_file(FILE *f, char *data_start, char *data_end, char *boundary, char *buf, int received)
-{
-    data_end = strstr(data_start, boundary);
-    if (data_end)
-    {
-        fwrite(data_start, 1, data_end - data_start, f);
-        fclose(f);
-        ESP_LOGI(TAG, "File reception complete");
-        return false;
-    }
-    fwrite(data_start, 1, buf + received - data_start, f);
-    printf("Wrote %d bytes to file\n", buf + received - data_start);
-    return true;
 }
 
 static void file_upload_complete(httpd_req_t *req)
@@ -164,13 +149,14 @@ esp_err_t file_upload_handler(httpd_req_t *req)
     if (!get_boundary(req, boundary, sizeof(boundary)))
         return ESP_FAIL;
 
-    bool file_open = false;
     static char buf[BUFFSIZE];
     int received = 0;
     FILE *f = NULL;
 
-    printf("---- Starting file upload handler ----\n");
-
+    // NOTE: The espidf web server does not support multiple files in a single request and
+    // will only process the first file in the request. This is a limitation of the espidf.
+    // The following while loop will only process the first file in the request. Later when
+    // the espidf supports multiple files in a single request, this loop should work.
     while (1)
     {
         received = httpd_req_recv(req, buf, BUFFSIZE);
@@ -193,7 +179,7 @@ esp_err_t file_upload_handler(httpd_req_t *req)
 
         while (data_start < buf + received)
         {
-            if (!file_open)
+            if (f == NULL)
             {
                 char *boundary_start = strstr(data_start, boundary);
                 if (boundary_start)
@@ -211,8 +197,6 @@ esp_err_t file_upload_handler(httpd_req_t *req)
                                 res = ESP_FAIL;
                                 break;
                             }
-
-                            file_open = true;
                         }
                     }
                 }
@@ -223,13 +207,26 @@ esp_err_t file_upload_handler(httpd_req_t *req)
             }
             else
             {
-                file_open = write_to_file(f, data_start, data_end, boundary, buf, received);
-                data_start =file_open ? buf + received : data_end + strlen(boundary);
-                break;
+                data_end = strstr(data_start, boundary);
+                if (data_end)
+                {
+                    fwrite(data_start, 1, data_end - data_start, f);
+                    ESP_LOGI(TAG, "File reception complete");
+                    data_start = data_end + strlen(boundary);
+                    break;
+                }
+                else
+                {
+                    fwrite(data_start, 1, buf + received - data_start, f);
+                    printf("Wrote %d bytes to file\n", buf + received - data_start);
+                    data_start = buf + received;
+                }
             }
         }
+        if (f != NULL)
+            fclose(f);
+        f = NULL;
     }
 
-    printf("---- Ending file upload handler ----\n");
     return res;
 }

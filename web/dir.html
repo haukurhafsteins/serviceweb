@@ -87,27 +87,31 @@
             var files = fileInput.files;
             const dir = document.getElementById('directory').value;
             var prg = document.getElementById('prg');
-            var formData = new FormData();
 
             for (var i = 0; i < files.length; i++) {
-                formData.append('files', files[i]); // Append each file
-            }
+                var formData = new FormData();
 
-            var url = `/api/upload?dir=${dir}`;
+                // NOTE: The 'files' key should be 'file' but as the server does not support
+                // multiple files, we use 'files' to match the server's expectation until 
+                // the server is updated to support multiple files
+                formData.append('file', files[i]); // Append the current file
 
-            try {
-                var response = await fetch(url, {
-                    method: 'POST',
-                    body: formData
-                });
+                var url = `/api/upload?dir=${dir}`;
 
-                if (response.ok) {
-                    prg.innerHTML = 'Upload complete!';
-                } else {
-                    prg.innerHTML = 'Error uploading files';
+                try {
+                    var response = await fetch(url, {
+                        method: 'POST',
+                        body: formData
+                    });
+
+                    if (response.ok) {
+                        prg.innerHTML += `<p>Upload of ${files[i].name} complete!</p>`;
+                    } else {
+                        prg.innerHTML += `<p>Error uploading ${files[i].name}</p>`;
+                    }
+                } catch (error) {
+                    prg.innerHTML += `<p>Error uploading ${files[i].name}</p>`;
                 }
-            } catch (error) {
-                prg.innerHTML = 'Error uploading files';
             }
         });
 
