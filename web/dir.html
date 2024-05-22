@@ -35,7 +35,7 @@
 </head>
 
 <body>
-    <h1>Directory File Manager</h1>
+    <h1>File Manager</h1>
 
     <form id="directoryForm">
         <label for="directory">Directory:</label>
@@ -54,7 +54,7 @@
         <input type="file" name="files" multiple required>
         <input type="submit" value="Upload">
     </form>
-    <div id="prg">Progress: 0%</div>
+    <div id="prg"></div>
 
     <button id="deleteButton" onclick="deleteSelectedFiles()">Delete Selected Files</button>
 
@@ -80,7 +80,7 @@
                 .catch(error => console.error('Error fetching files:', error));
         });
 
-        document.getElementById('upload_form').addEventListener('submit', async function (evt) {
+        document.getElementById('upload_form').addEventListener('submit', function (evt) {
             evt.preventDefault(); // Prevent normal form submission
 
             var fileInput = document.querySelector('input[name="files"]');
@@ -90,28 +90,42 @@
 
             for (var i = 0; i < files.length; i++) {
                 var formData = new FormData();
-
-                // NOTE: The 'files' key should be 'file' but as the server does not support
-                // multiple files, we use 'files' to match the server's expectation until 
-                // the server is updated to support multiple files
                 formData.append('file', files[i]); // Append the current file
 
                 var url = `/api/upload?dir=${dir}`;
 
-                try {
-                    var response = await fetch(url, {
-                        method: 'POST',
-                        body: formData
-                    });
+                // Create a progress element for each file
+                var progressBar = document.createElement('div');
+                var filename = files[i].name;
+                progressBar.innerHTML = `<p>${filename}</p><progress value="0" max="100"></progress>`;
+                prg.appendChild(progressBar);
+                var progressElement = progressBar.querySelector('progress');
 
-                    if (response.ok) {
-                        prg.innerHTML += `<p>Upload of ${files[i].name} complete!</p>`;
-                    } else {
-                        prg.innerHTML += `<p>Error uploading ${files[i].name}</p>`;
+                // Use XMLHttpRequest to upload the file and track progress
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', url, true);
+
+                xhr.upload.addEventListener('progress', function (event) {
+                    if (event.lengthComputable) {
+                        var percentComplete = (event.loaded / event.total) * 100;
+                        progressElement.value = percentComplete;
                     }
-                } catch (error) {
-                    prg.innerHTML += `<p>Error uploading ${files[i].name}</p>`;
-                }
+                });
+
+                xhr.addEventListener('load', function () {
+                    if (xhr.status >= 200 && xhr.status < 300) {
+                        prg.innerHTML += `<p>Upload of ${filename} complete!</p>`;
+                        document.getElementById('directoryForm').dispatchEvent(new Event('submit'));
+                    } else {
+                        prg.innerHTML += `<p>Error uploading ${filename}</p>`;
+                    }
+                });
+
+                xhr.addEventListener('error', function () {
+                    prg.innerHTML += `<p>Error uploading ${filename}</p>`;
+                });
+
+                xhr.send(formData);
             }
         });
 
