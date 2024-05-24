@@ -603,6 +603,7 @@ void register_files(const char *basePath, const char *path)
     if (dp == NULL)
     {
         perror("Unable to open directory");
+        free(fullPath);
         return;
     }
 
