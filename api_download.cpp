@@ -44,8 +44,8 @@ esp_err_t api_file_download_handler(httpd_req_t *req)
     char *filename = strrchr(filepath, '/');
     if (filename)
     {
-        char buf[64];
-        snprintf(buf, sizeof(buf), "attachment; filename=%s", filename + 1);
+        char buf[128];
+        snprintf(buf, sizeof(buf), "attachment; filename=\"%s\"", filename + 1);
         httpd_resp_set_hdr(req, "Content-Disposition", buf);
         snprintf(buf, sizeof(buf), "%ld", file_stat.st_size);
         httpd_resp_set_hdr(req, "Content-Length", buf);
@@ -76,5 +76,4 @@ esp_err_t api_file_download_handler(httpd_req_t *req)
     fclose(file);
     httpd_resp_send_chunk(req, NULL, 0);
     return ESP_OK;
-
 }
