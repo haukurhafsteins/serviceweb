@@ -32,10 +32,11 @@ enum
 
 extern esp_err_t ota_post_handler(httpd_req_t* req);
 extern esp_err_t file_ota_get(httpd_req_t* req);
-extern esp_err_t file_upload_handler(httpd_req_t* req);
+extern esp_err_t file_dir_get(httpd_req_t* req);
 extern esp_err_t file_upload_get(httpd_req_t* req);
 extern esp_err_t sysmon_get_handler(httpd_req_t* req);
 extern esp_err_t file_listdir_handler(httpd_req_t* req);
+extern void start_api_server(void);
 
 static const char* SUBSCRIBE_RESP = "subscribeResp";
 static const char* RESP_MESSAGE = "{\"cmd\":\"%s\",\"data\":{\"name\":\"%s\", \"value\":";
@@ -47,6 +48,7 @@ static const char* NEWSTATE_JSON = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%
 static const char* UNSUBSCRIBE_MESSAGE = "{\"cmd\":\"unsubscribeResp\",\"data\":\"%s\"}";
 
 static const char* NNEWSTATE_FLOAT = "{\"f\":\"%s\"}";
+static const char* NNEWSTATE_BINARY = "{\"bin\":\"%s\"}";
 
 static char TAG[] = "SERVWEB";
 static char* json_buf = (char*)malloc(JSON_BUF_SIZE);
@@ -242,7 +244,7 @@ static void par_send_to_sockets(pp_t pp, char* json)
         par_cleanup();
 }
 
-static void par_send_binary_to_sockets(pp_t pp, char* json, size_t json_len, const void* bin, size_t bin_len)
+static void par_send_binary_to_sockets(pp_t pp, const char* json, size_t json_len, const void* bin, size_t bin_len)
 {
     if (!pp_is_enabled(pp))
         return;
@@ -350,6 +352,20 @@ static bool web_post_newstate_float_array(pp_t pp, pp_float_array_t* fsrc)
     return true;
 }
 
+static bool web_post_newstate_binary(pp_t pp, const void* bin, size_t bin_size)
+{
+    if (!par_list_empty())
+    {
+        const char* name = pp_get_name(pp);
+        size_t len = 64;
+        char* json = (char*)calloc(1, len);
+        len = snprintf(json, len, NNEWSTATE_BINARY, name) + 1;
+        par_send_binary_to_sockets(pp, json, len, bin, bin_size);
+        free(json);
+    }
+    return true;
+}
+
 static void write_to_json_buf(pp_t pp, const char* format, ...)
 {
     memset(json_buf, 0, JSON_BUF_SIZE);
@@ -408,6 +424,9 @@ static void evloop_newstate(void* handler_arg, esp_event_base_t base, int32_t id
         break;
     case TYPE_STRING:
         web_post_newstate_string(pp, (char*)context);
+        break;
+    case TYPE_BINARY:
+        //web_post_newstate_binary(pp, (char *)context); // TODO, length is missing
         break;
     default:
         ESP_LOGW(TAG, "unsupported type %d", type);
@@ -608,6 +627,7 @@ void register_files(const char* basePath, const char* path)
     if (dp == NULL)
     {
         perror("Unable to open directory");
+        free(fullPath);
         return;
     }
 
@@ -673,6 +693,8 @@ void serviceweb_start(void)
     httpss_register_url("/upload?*", false, file_upload_handler, HTTP_POST, NULL);
     httpss_register_url("/metrics", false, sysmon_get_handler, HTTP_GET, NULL);
     httpss_register_url("/listdir", false, file_listdir_handler, HTTP_GET, NULL);
+
+    start_api_server();
 
     const char* path = "/spiffs/";
     register_files(path, path);
