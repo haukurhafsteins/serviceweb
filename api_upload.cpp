@@ -9,14 +9,11 @@
 #include "esp_http_server.h"
 #include "cJSON.h"
 #include "httpss.h"
+#include "api_priv.hpp"
 
 #define TAG "FILE_SERVER"
 
-#define BOUNDARY_MAX_LEN 100
-#define BUFFSIZE 512
-#define FILE_PATH_MAX (ESP_VFS_PATH_MAX + 64)
-
-static bool get_directory_destination(httpd_req_t *req, char *destination, size_t dest_len)
+bool get_value_from_query(httpd_req_t *req, const char* value_name, char *destination, size_t dest_len)
 {
     const int buf_len = httpd_req_get_url_query_len(req) + 1;
     if (buf_len > 1)
@@ -31,7 +28,7 @@ static bool get_directory_destination(httpd_req_t *req, char *destination, size_
         }
         else
         {
-            if (httpd_query_key_value(buf1, "dir", destination, dest_len) != ESP_OK)
+            if (httpd_query_key_value(buf1, value_name, destination, dest_len) != ESP_OK)
             {
                 ESP_LOGI(TAG, "Destination not found in URL query %s", buf1);
                 free(buf1);
@@ -131,25 +128,25 @@ static bool extract_filename_from_content_disposition(httpd_req_t req, char *buf
     return false;
 }
 
-esp_err_t file_upload_handler(httpd_req_t *req)
+esp_err_t api_file_upload_handler(httpd_req_t *req)
 {
     esp_err_t res = ESP_OK;
     char destination[64];
     char boundary[BOUNDARY_MAX_LEN];
 
-    if (!get_directory_destination(req, destination, sizeof(destination)))
+    if (!get_value_from_query(req, "dir", destination, sizeof(destination)))
         return ESP_FAIL;
 
     if (!get_boundary(req, boundary, sizeof(boundary)))
         return ESP_FAIL;
 
-    static char buf[BUFFSIZE];
+    static char buf[API_BUFFSIZE];
     int received = 0;
     FILE *f = NULL;
 
     while (1)
     {
-        received = httpd_req_recv(req, buf, BUFFSIZE);
+        received = httpd_req_recv(req, buf, API_BUFFSIZE);
         if (received == HTTPD_SOCK_ERR_TIMEOUT)
             continue;
 

@@ -57,6 +57,7 @@
     <div id="prg"></div>
 
     <button id="deleteButton" onclick="deleteSelectedFiles()">Delete Selected Files</button>
+    <button id="downloadButton" onclick="downloadSelectedFiles()">Download Selected Files</button>
 
     <table id="fileTable">
         <thead>
@@ -195,6 +196,26 @@
                     document.getElementById('directoryForm').dispatchEvent(new Event('submit'));
                 })
                 .catch(error => console.error('Error deleting files:', error));
+        }
+
+        function downloadSelectedFiles() {
+            const selectedFiles = Array.from(document.querySelectorAll('#fileTable tbody input[type="checkbox"]:checked'))
+                .map(checkbox => checkbox.value);
+
+            if (selectedFiles.length === 0) {
+                alert('No files selected for download.');
+                return;
+            }
+
+            selectedFiles.forEach(file => {
+                const a = document.createElement('a');
+                a.href = `/api/download?file=${file}`;
+                a.download = file;
+                a.style.display = 'none';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+            });
         }
     </script>
 </body>
