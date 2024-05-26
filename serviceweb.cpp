@@ -690,7 +690,6 @@ void serviceweb_start(void)
     httpss_register_url("/update", false, ota_post_handler, HTTP_POST, NULL);
     httpss_register_url("/upload.html", false, file_upload_get, HTTP_GET, NULL);
     httpss_register_url("/ota.html", false, file_ota_get, HTTP_GET, NULL);
-    httpss_register_url("/upload?*", false, file_upload_handler, HTTP_POST, NULL);
     httpss_register_url("/metrics", false, sysmon_get_handler, HTTP_GET, NULL);
     httpss_register_url("/listdir", false, file_listdir_handler, HTTP_GET, NULL);
 
