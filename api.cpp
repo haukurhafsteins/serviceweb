@@ -6,7 +6,7 @@
 #include <sys/stat.h>
 #include <dirent.h>
 #include "esp_vfs.h"
-#include <errno.h>
+//#include "esp_vfs_fat.h"
 #include "esp_log.h"
 #include "esp_err.h"
 #include "esp_http_server.h"
@@ -14,6 +14,7 @@
 #include "httpss.h"
 #include "api_priv.hpp"
 
+#define MOUNT_POINT "/spiffs"
 #define TAG "FILE_SERVER"
 
 static esp_err_t file_rename_handler(httpd_req_t* req)

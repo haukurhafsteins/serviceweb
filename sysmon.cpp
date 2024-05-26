@@ -349,13 +349,7 @@ static bool listFilesRecursively(httpd_req_t *req, char *buf, size_t buf_size, c
 
             if (S_ISREG(path_stat.st_mode))
             {
-                struct stat sb = {0};
-                if (stat(path, &sb) == -1)
-                {
-                    ESP_LOGE(TAG, "stat failed for %s", path);
-                }
-
-                snprintf(buf, buf_size, "<div>%s\t%lld\t%s\t%s\t%s</div>", path, (long long)sb.st_size, ctime(&sb.st_ctime), ctime(&sb.st_atime), ctime(&sb.st_mtime));
+                snprintf(buf, buf_size, "<div>%s</div>", path);
                 httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
             }
             else if (S_ISDIR(path_stat.st_mode))

@@ -35,7 +35,7 @@
 </head>
 
 <body>
-    <h1>File Manager</h1>
+    <h1>Directory File Manager</h1>
 
     <form id="directoryForm">
         <label for="directory">Directory:</label>
@@ -43,18 +43,11 @@
         <button type="submit">List Files</button>
     </form>
 
-    <!-- <form id="uploadForm" enctype="multipart/form-data">
+    <form id="uploadForm" enctype="multipart/form-data">
         <label for="fileUpload">Select files to upload:</label>
         <input type="file" id="fileUpload" name="fileUpload" multiple required>
         <button type="submit">Upload</button>
-    </form> -->
-
-    <form id="upload_form">
-        <label for="fileUpload">Select files to upload:</label>
-        <input type="file" name="files" multiple required>
-        <input type="submit" value="Upload">
     </form>
-    <div id="prg"></div>
 
     <button id="deleteButton" onclick="deleteSelectedFiles()">Delete Selected Files</button>
     <button id="downloadButton" onclick="downloadSelectedFiles()">Download Selected Files</button>
@@ -72,7 +65,7 @@
     </table>
 
     <script>
-        document.getElementById('directoryForm').addEventListener('submit', function (event) {
+        document.getElementById('directoryForm').addEventListener('submit', function(event) {
             event.preventDefault();
             const directory = document.getElementById('directory').value;
             fetch(`/api/list?dir=${directory}`)
@@ -81,53 +74,28 @@
                 .catch(error => console.error('Error fetching files:', error));
         });
 
-        document.getElementById('upload_form').addEventListener('submit', function (evt) {
-            evt.preventDefault(); // Prevent normal form submission
+        document.getElementById('uploadForm').addEventListener('submit', function(event) {
+            event.preventDefault();
+            const fileInput = document.getElementById('fileUpload');
+            const files = fileInput.files;
+            const formData = new FormData();
 
-            var fileInput = document.querySelector('input[name="files"]');
-            var files = fileInput.files;
-            const dir = document.getElementById('directory').value;
-            var prg = document.getElementById('prg');
-
-            for (var i = 0; i < files.length; i++) {
-                var formData = new FormData();
-                formData.append('file', files[i]); // Append the current file
-
-                var url = `/api/upload?dir=${dir}`;
-
-                // Create a progress element for each file
-                var progressBar = document.createElement('div');
-                var filename = files[i].name;
-                progressBar.innerHTML = `<p>${filename}</p><progress value="0" max="100"></progress>`;
-                prg.appendChild(progressBar);
-                var progressElement = progressBar.querySelector('progress');
-
-                // Use XMLHttpRequest to upload the file and track progress
-                var xhr = new XMLHttpRequest();
-                xhr.open('POST', url, true);
-
-                xhr.upload.addEventListener('progress', function (event) {
-                    if (event.lengthComputable) {
-                        var percentComplete = (event.loaded / event.total) * 100;
-                        progressElement.value = percentComplete;
-                    }
-                });
-
-                xhr.addEventListener('load', function () {
-                    if (xhr.status >= 200 && xhr.status < 300) {
-                        prg.innerHTML += `<p>Upload of ${filename} complete!</p>`;
-                        document.getElementById('directoryForm').dispatchEvent(new Event('submit'));
-                    } else {
-                        prg.innerHTML += `<p>Error uploading ${filename}</p>`;
-                    }
-                });
-
-                xhr.addEventListener('error', function () {
-                    prg.innerHTML += `<p>Error uploading ${filename}</p>`;
-                });
-
-                xhr.send(formData);
+            for (let i = 0; i < files.length; i++) {
+                formData.append('file', files[i], files[i].name);
             }
+
+            fetch(`/api/upload`, {
+                method: 'POST',
+                body: formData
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert('Files uploaded successfully');
+                console.log(data);
+                // Refresh the file list
+                document.getElementById('directoryForm').dispatchEvent(new Event('submit'));
+            })
+            .catch(error => console.error('Error uploading files:', error));
         });
 
         function displayFiles(files) {
@@ -188,14 +156,14 @@
                 },
                 body: JSON.stringify({ files: selectedFiles })
             })
-                .then(response => response.json())
-                .then(data => {
-                    alert('Selected files deleted successfully');
-                    console.log(data);
-                    // Refresh the file list
-                    document.getElementById('directoryForm').dispatchEvent(new Event('submit'));
-                })
-                .catch(error => console.error('Error deleting files:', error));
+            .then(response => response.json())
+            .then(data => {
+                alert('Selected files deleted successfully');
+                console.log(data);
+                // Refresh the file list
+                document.getElementById('directoryForm').dispatchEvent(new Event('submit'));
+            })
+            .catch(error => console.error('Error deleting files:', error));
         }
 
         function downloadSelectedFiles() {
