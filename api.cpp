@@ -47,7 +47,7 @@ static esp_err_t file_copy_handler(httpd_req_t* req)
     return ESP_OK;
 }
 
-static esp_err_t file_list_all_handler(httpd_req_t* req)
+esp_err_t api_file_list_all_handler(httpd_req_t* req)
 {
     char directory[128];
     size_t len = httpd_req_get_url_query_len(req) + 1;
@@ -179,7 +179,7 @@ static esp_err_t file_delete_handler(httpd_req_t* req)
 
 static esp_err_t start_file_server()
 {
-    httpss_register_url("/api/list", false, file_list_all_handler, HTTP_GET, NULL);
+    httpss_register_url("/api/list", false, api_file_list_all_handler, HTTP_GET, NULL);
     httpss_register_url("/api/upload", false, api_file_upload_handler, HTTP_POST, NULL);
     httpss_register_url("/api/download", false, api_file_download_handler, HTTP_GET, NULL);
     httpss_register_url("/api/delete", false, file_delete_handler, HTTP_POST, NULL);

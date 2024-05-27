@@ -365,40 +365,6 @@ static bool listFilesRecursively(httpd_req_t *req, char *buf, size_t buf_size, c
     return true;
 }
 
-esp_err_t file_listdir_handler(httpd_req_t *req)
-{
-    const int bufsize = 4096;
-    char *buf = (char *)calloc(bufsize, sizeof(char));
-
-    httpd_resp_send_chunk(req, HTML_DOC_START_TO_BODY, HTTPD_RESP_USE_STRLEN);
-
-    const char *p = ethernet_get_ip();
-    const char *BUTTON = "<button onclick=\"window.location.href='http://%s/listdir?dir=%s'\">%s</button>";
-
-    snprintf(buf, bufsize, BUTTON, p, "/spiffs", "spiffs");
-    httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
-
-    const int buf_len = httpd_req_get_url_query_len(req) + 1;
-    if (buf_len > 1)
-    {
-        char *buf1 = (char *)malloc(buf_len);
-        if (httpd_req_get_url_query_str(req, buf1, buf_len) == ESP_OK)
-        {
-            char param[32];
-            if (httpd_query_key_value(buf1, "dir", param, sizeof(param)) == ESP_OK)
-                listFilesRecursively(req, buf, bufsize, param);
-        }
-        free(buf1);
-    }
-
-    httpd_resp_send_chunk(req, HTML_DOC_BODY_TO_END, HTTPD_RESP_USE_STRLEN);
-    httpd_resp_send_chunk(req, buf, 0);
-
-    free(buf);
-
-    return ESP_OK;
-}
-
 void serviceweb_set_nvs_namespace(const char *name)
 {
     nvs_namespace = name;

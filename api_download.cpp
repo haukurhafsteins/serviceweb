@@ -39,6 +39,9 @@ esp_err_t api_file_download_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    printf("File path: %s\n", filepath);
+    printf("File size: %ld\n", file_stat.st_size);
+
     httpd_resp_set_type(req, "application/octet-stream");
 
     char *filename = strrchr(filepath, '/');
@@ -62,9 +65,10 @@ esp_err_t api_file_download_handler(httpd_req_t *req)
 
     while ((bytes_read = fread(chunk, 1, API_BUFFSIZE, file)) > 0)
     {
-        if (httpd_resp_send_chunk(req, chunk, bytes_read) != ESP_OK)
+        esp_err_t err = httpd_resp_send_chunk(req, chunk, bytes_read);
+        if (err != ESP_OK)
         {
-            ESP_LOGE(TAG, "Failed to send file download chunk");
+            ESP_LOGE(TAG, "Failed to send file download chunk: %s", esp_err_to_name(err));
             free(chunk);
             fclose(file);
             httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to send file download chunk");

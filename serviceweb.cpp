@@ -9,6 +9,7 @@
 #include "esp_log.h"
 #include "serviceweb.h"
 #include "httpss.h"
+#include "api_priv.hpp"
 
 #include "cJSON.h"
 #include "pp.h"
@@ -31,10 +32,7 @@ enum
 };
 
 extern esp_err_t ota_post_handler(httpd_req_t* req);
-extern esp_err_t file_ota_get(httpd_req_t* req);
-extern esp_err_t file_dir_get(httpd_req_t* req);
 extern esp_err_t sysmon_get_handler(httpd_req_t* req);
-extern esp_err_t file_listdir_handler(httpd_req_t* req);
 extern void start_api_server(void);
 
 static const char* SUBSCRIBE_RESP = "subscribeResp";
@@ -55,6 +53,28 @@ static pp_evloop_t evloop;
 ESP_EVENT_DEFINE_BASE(SERVWEB_EVENTS);
 
 static void evloop_newstate(void* handler_arg, esp_event_base_t base, int32_t id, void* context);
+
+extern const uint8_t ota_html_start[] asm("_binary_ota_html_start");
+extern const uint8_t ota_html_end[] asm("_binary_ota_html_end");
+
+static esp_err_t file_ota_html_get(httpd_req_t *req)
+{
+    char buf[16]; // dummy buffer
+    httpd_resp_send_chunk(req, (char *)ota_html_start, ota_html_end - ota_html_start);
+    return httpd_resp_send_chunk(req, buf, 0);
+
+}
+
+extern const uint8_t dir_html_start[] asm("_binary_dir_html_start");
+extern const uint8_t dir_html_end[] asm("_binary_dir_html_end");
+
+static esp_err_t file_dir_html_get(httpd_req_t *req)
+{
+    char buf[16]; // dummy buffer
+    httpd_resp_send_chunk(req, (char *)dir_html_start, dir_html_end - dir_html_start);
+    return httpd_resp_send_chunk(req, buf, 0);
+
+}
 
 static size_t get_file_size(FILE* file)
 {
@@ -687,9 +707,9 @@ void serviceweb_start(void)
     // httpss_register_url("/", false, get_index, HTTP_GET, NULL);
     httpss_register_url("/ws", true, ws_handler, HTTP_GET, NULL);
     httpss_register_url("/update", false, ota_post_handler, HTTP_POST, NULL);
-    httpss_register_url("/ota.html", false, file_ota_get, HTTP_GET, NULL);
+    httpss_register_url("/ota.html", false, file_ota_html_get, HTTP_GET, NULL);
+    httpss_register_url("/dir.html", false, file_dir_html_get, HTTP_GET, NULL);
     httpss_register_url("/metrics", false, sysmon_get_handler, HTTP_GET, NULL);
-    httpss_register_url("/listdir", false, file_listdir_handler, HTTP_GET, NULL);
 
     start_api_server();
 

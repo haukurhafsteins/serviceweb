@@ -9,17 +9,6 @@
 
 static char boundary[BOUNDARY_MAX_LEN];
 
-extern const uint8_t ota_html_start[] asm("_binary_ota_html_start");
-extern const uint8_t ota_html_end[] asm("_binary_ota_html_end");
-
-esp_err_t file_ota_get(httpd_req_t *req)
-{
-    char buf[16]; // dummy buffer
-    httpd_resp_send_chunk(req, (char *)ota_html_start, ota_html_end - ota_html_start);
-    return httpd_resp_send_chunk(req, buf, 0);
-
-}
-
 esp_err_t ota_post_handler(httpd_req_t *req) {
     char buf[BUFFSIZE];
     int received = 0;
