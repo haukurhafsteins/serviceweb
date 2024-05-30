@@ -371,19 +371,19 @@ static bool web_post_newstate_float_array(pp_t pp, pp_float_array_t* fsrc)
     return true;
 }
 
-static bool web_post_newstate_binary(pp_t pp, const void* bin, size_t bin_size)
-{
-    if (!par_list_empty())
-    {
-        const char* name = pp_get_name(pp);
-        size_t len = 64;
-        char* json = (char*)calloc(1, len);
-        len = snprintf(json, len, NNEWSTATE_BINARY, name) + 1;
-        par_send_binary_to_sockets(pp, json, len, bin, bin_size);
-        free(json);
-    }
-    return true;
-}
+// static bool web_post_newstate_binary(pp_t pp, const void* bin, size_t bin_size)
+// {
+//     if (!par_list_empty())
+//     {
+//         const char* name = pp_get_name(pp);
+//         size_t len = 64;
+//         char* json = (char*)calloc(1, len);
+//         len = snprintf(json, len, NNEWSTATE_BINARY, name) + 1;
+//         par_send_binary_to_sockets(pp, json, len, bin, bin_size);
+//         free(json);
+//     }
+//     return true;
+// }
 
 static void write_to_json_buf(pp_t pp, const char* format, ...)
 {
