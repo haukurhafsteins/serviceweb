@@ -50,8 +50,6 @@ esp_err_t api_file_download_handler(httpd_req_t *req)
         char buf[128];
         snprintf(buf, sizeof(buf), "attachment; filename=\"%s\"", filename + 1);
         httpd_resp_set_hdr(req, "Content-Disposition", buf);
-        snprintf(buf, sizeof(buf), "%ld", file_stat.st_size);
-        httpd_resp_set_hdr(req, "Content-Length", buf);
     }
 
     char *chunk = (char *)malloc(API_BUFFSIZE);
