@@ -66,6 +66,8 @@
         <tbody></tbody>
     </table>
 
+    <button id="rebootButton" class="btn btn-primary">Reboot</button>
+
     <script>
         document.getElementById('directoryForm').addEventListener('submit', function(event) {
             event.preventDefault();
@@ -216,6 +218,18 @@
                 document.body.removeChild(a);
             });
         }
+
+        document.getElementById('rebootButton').addEventListener('click', function() {
+            fetch('/api/reboot', {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                alert('Rebooting device...');
+                console.log(data);
+            })
+            .catch(error => console.error('Error rebooting device:', error));
+        });
     </script>
 </body>
 

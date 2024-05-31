@@ -177,6 +177,13 @@ static esp_err_t file_delete_handler(httpd_req_t* req)
     return ESP_OK;
 }
 
+static esp_err_t api_reboot(httpd_req_t* req)
+{
+    httpd_resp_sendstr(req, "{\"message\": \"Rebooting...\"}");
+    esp_restart();
+    return ESP_OK;
+}
+
 static esp_err_t start_file_server()
 {
     httpss_register_url("/api/list", false, api_file_list_all_handler, HTTP_GET, NULL);
@@ -185,6 +192,7 @@ static esp_err_t start_file_server()
     httpss_register_url("/api/delete", false, file_delete_handler, HTTP_POST, NULL);
     httpss_register_url("/api/rename", false, file_rename_handler, HTTP_POST, NULL);
     httpss_register_url("/api/copy", false, file_copy_handler, HTTP_POST, NULL);
+    httpss_register_url("/api/reboot", false, api_reboot, HTTP_POST, NULL);
 
     return ESP_OK;
 }
