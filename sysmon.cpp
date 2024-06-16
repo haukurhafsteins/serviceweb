@@ -124,6 +124,12 @@ static void print_nvs_configuration(httpd_req_t *req, char *buf, size_t bufsize)
                 nvs_get_i32(h, info.key, &i);
                 snprintf(buf, bufsize, "<tr><td>%s</td><td>%s</td><td>int32_t</td><td>%ld</td></tr>", info.namespace_name, info.key, i);
             }
+            else if (info.type == NVS_TYPE_I64)
+            {
+                int64_t i = 0;
+                nvs_get_i64(h, info.key, &i);
+                snprintf(buf, bufsize, "<tr><td>%s</td><td>%s</td><td>int32_t</td><td>%lld</td></tr>", info.namespace_name, info.key, i);
+            }
             else
             {
                 snprintf(buf, bufsize, "<tr><td>%s</td><td>%s</td><td>int32_t</td><td>Unknown</td></tr>", info.namespace_name, info.key);
