@@ -16,7 +16,6 @@
 
 #define RECV_BUFFER_SIZE 8192
 #define MAX_FLOAT_BYTES 80
-#define JSON_BUF_SIZE (512 * 10)
 #define SEND_TIMOEOUT_MS 50
 
 typedef struct
@@ -48,7 +47,8 @@ static const char* NNEWSTATE_FLOAT = "{\"f\":\"%s\"}";
 static const char* NNEWSTATE_BINARY = "{\"bin\":\"%s\"}";
 
 static char TAG[] = "SERVWEB";
-static char* json_buf = (char*)malloc(JSON_BUF_SIZE);
+static char* json_buf = 0;
+static size_t json_buf_size = 0;
 static pp_evloop_t evloop;
 ESP_EVENT_DEFINE_BASE(SERVWEB_EVENTS);
 
@@ -387,22 +387,22 @@ static bool web_post_newstate_float_array(pp_t pp, pp_float_array_t* fsrc)
 
 static void write_to_json_buf(pp_t pp, const char* format, ...)
 {
-    memset(json_buf, 0, JSON_BUF_SIZE);
+    memset(json_buf, 0, json_buf_size);
 
     va_list valist;
     va_start(valist, format);
-    int len = vsnprintf(json_buf, JSON_BUF_SIZE, format, valist);
+    int len = vsnprintf(json_buf, json_buf_size, format, valist);
     if (len < 0)
     {
         ESP_LOGE(TAG, "%s: Error, vsnprintf return negative", __func__);
         return;
     }
     va_end(valist);
-    size_t read = JSON_BUF_SIZE - len;
+    size_t read = json_buf_size - len;
     if (pp_get_as_string(pp, &json_buf[len], &read, false))
-        strncat(json_buf, "}}", JSON_BUF_SIZE - len - read);
+        strncat(json_buf, "}}", json_buf_size - len - read);
     else
-        strncat(json_buf, "\"\"}}", JSON_BUF_SIZE - len);
+        strncat(json_buf, "\"\"}}", json_buf_size - len);
 }
 
 static void evloop_newstate(void* handler_arg, esp_event_base_t base, int32_t id, void* context)
@@ -624,7 +624,7 @@ static void evloop_ws_handler(void* arg, esp_event_base_t event_base, int32_t ev
         //----------------- unsubscribe -----------------
         else if (0 == strcmp(cmd->valuestring, "unsubscribe"))
         {
-            snprintf(json_buf, JSON_BUF_SIZE, UNSUBSCRIBE_MESSAGE, parname->valuestring);
+            snprintf(json_buf, json_buf_size, UNSUBSCRIBE_MESSAGE, parname->valuestring);
             httpss_websocket_send(wsdata->socket, json_buf);
             par_remove_socket(pp, wsdata->socket);
             par_cleanup();
@@ -689,8 +689,11 @@ void register_files(const char* basePath, const char* path)
     closedir(dp);
 }
 
-void serviceweb_init()
+void serviceweb_init(char* buffer, size_t size)
 {
+    json_buf = buffer;
+    json_buf_size = size;
+
     esp_event_loop_args_t loop_args = {
         .queue_size = 40,
         .task_name = "servweb",
