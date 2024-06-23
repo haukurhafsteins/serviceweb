@@ -193,6 +193,7 @@ static esp_err_t start_file_server()
     httpss_register_url("/api/rename", false, file_rename_handler, HTTP_POST, NULL);
     httpss_register_url("/api/copy", false, file_copy_handler, HTTP_POST, NULL);
     httpss_register_url("/api/reboot", false, api_reboot, HTTP_POST, NULL);
+    httpss_register_url("/api/nvs", false, api_nvs, HTTP_GET, NULL);
 
     return ESP_OK;
 }

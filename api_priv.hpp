@@ -13,3 +13,5 @@ bool get_value_from_query(httpd_req_t *req, const char* value_name, char *destin
 esp_err_t api_file_upload_handler(httpd_req_t *req);
 esp_err_t api_file_download_handler(httpd_req_t *req);
 esp_err_t api_file_list_all_handler(httpd_req_t *req);
+esp_err_t api_nvs(httpd_req_t* req);
+
