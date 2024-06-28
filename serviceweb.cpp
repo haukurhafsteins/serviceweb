@@ -14,7 +14,6 @@
 #include "cJSON.h"
 #include "pp.h"
 
-#define RECV_BUFFER_SIZE 8192
 #define MAX_FLOAT_BYTES 80
 #define SEND_TIMOEOUT_MS 50
 
@@ -49,6 +48,8 @@ static const char* NNEWSTATE_BINARY = "{\"bin\":\"%s\"}";
 static char TAG[] = "SERVWEB";
 static char* json_buf = 0;
 static size_t json_buf_size = 0;
+static char* rx_buf = 0;
+static size_t rx_buf_size = 0;
 static pp_evloop_t evloop;
 ESP_EVENT_DEFINE_BASE(SERVWEB_EVENTS);
 
@@ -487,13 +488,11 @@ static esp_err_t ws_handler(httpd_req_t* req)
     if (req->method == HTTP_GET)
         return ESP_OK;
 
-    uint8_t receive_buffer[RECV_BUFFER_SIZE];
-    memset(receive_buffer, 0, RECV_BUFFER_SIZE);
-    pp_websocket_data_t* wsdata = (pp_websocket_data_t*)receive_buffer;
+    pp_websocket_data_t* wsdata = (pp_websocket_data_t*)rx_buf;
     httpd_ws_frame_t ws_pkt = {};
     ws_pkt.type = HTTPD_WS_TYPE_TEXT;
     ws_pkt.payload = (uint8_t*)wsdata->payload;
-    if (ESP_OK != httpd_ws_recv_frame(req, &ws_pkt, RECV_BUFFER_SIZE - 1 - sizeof(pp_websocket_data_t)))
+    if (ESP_OK != httpd_ws_recv_frame(req, &ws_pkt, rx_buf_size - 1 - sizeof(pp_websocket_data_t)))
     {
         ESP_LOGE(TAG, "%s: Error receiving websocket frame", __func__);
         return ESP_FAIL;
@@ -689,10 +688,13 @@ void register_files(const char* basePath, const char* path)
     closedir(dp);
 }
 
-void serviceweb_init(char* buffer, size_t size)
+void serviceweb_init(char* buffer, size_t size, char* rxbuf, size_t rxsize)
 {
     json_buf = buffer;
     json_buf_size = size;
+
+    rx_buf = rxbuf;
+    rx_buf_size = rxsize;  
 
     esp_event_loop_args_t loop_args = {
         .queue_size = 40,
