@@ -42,7 +42,45 @@ esp_err_t api_file_download_handler(httpd_req_t *req)
     printf("File path: %s\n", filepath);
     printf("File size: %ld\n", file_stat.st_size);
 
-    httpd_resp_set_type(req, "application/octet-stream");
+    // Check the file ending and set the appropriate content type
+    char *file_ending = strrchr(filepath, '.');
+    if (file_ending)
+    {
+        if (strcmp(file_ending, ".pdf") == 0)
+            httpd_resp_set_type(req, "application/pdf");
+        else if (strcmp(file_ending, ".jpg") == 0)
+            httpd_resp_set_type(req, "image/jpeg");
+        else if (strcmp(file_ending, ".png") == 0)
+            httpd_resp_set_type(req, "image/png");
+        else if (strcmp(file_ending, ".gif") == 0)
+            httpd_resp_set_type(req, "image/gif");
+        else if (strcmp(file_ending, ".html") == 0)
+            httpd_resp_set_type(req, "text/html");
+        else if (strcmp(file_ending, ".css") == 0)
+            httpd_resp_set_type(req, "text/css");
+        else if (strcmp(file_ending, ".js") == 0)
+            httpd_resp_set_type(req, "application/javascript");
+        else if (strcmp(file_ending, ".json") == 0)
+            httpd_resp_set_type(req, "application/json");
+        else if (strcmp(file_ending, ".xml") == 0)
+            httpd_resp_set_type(req, "application/xml");
+        else if (strcmp(file_ending, ".zip") == 0)
+            httpd_resp_set_type(req, "application/zip");
+        else if (strcmp(file_ending, ".gz") == 0)
+            httpd_resp_set_type(req, "application/gzip");
+        else if (strcmp(file_ending, ".tar") == 0)
+            httpd_resp_set_type(req, "application/x-tar");
+        else if (strcmp(file_ending, ".txt") == 0)
+            httpd_resp_set_type(req, "text/plain");
+        else if (strcmp(file_ending, ".csv") == 0)
+            httpd_resp_set_type(req, "text/csv");
+        else
+            httpd_resp_set_type(req, "application/octet-stream");
+    }
+    else
+    {
+        httpd_resp_set_type(req, "application/octet-stream");
+    }
 
     char *filename = strrchr(filepath, '/');
     if (filename)
@@ -77,5 +115,6 @@ esp_err_t api_file_download_handler(httpd_req_t *req)
     free(chunk);
     fclose(file);
     httpd_resp_send_chunk(req, NULL, 0);
+    ESP_LOGI(TAG, "File %s, download complete", filepath);
     return ESP_OK;
 }
