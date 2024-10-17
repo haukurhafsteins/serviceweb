@@ -43,7 +43,7 @@ static const char* NEWSTATE_JSON = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%
 static const char* UNSUBSCRIBE_MESSAGE = "{\"cmd\":\"unsubscribeResp\",\"data\":\"%s\"}";
 
 static const char* NNEWSTATE_FLOAT = "{\"f\":\"%s\"}";
-static const char* NNEWSTATE_BINARY = "{\"bin\":\"%s\"}";
+//static const char* NNEWSTATE_BINARY = "{\"bin\":\"%s\"}";
 
 static char TAG[] = "SERVWEB";
 static char* json_buf = 0;
@@ -58,10 +58,10 @@ static void evloop_newstate(void* handler_arg, esp_event_base_t base, int32_t id
 extern const uint8_t ota_html_start[] asm("_binary_ota_html_start");
 extern const uint8_t ota_html_end[] asm("_binary_ota_html_end");
 
-static esp_err_t file_ota_html_get(httpd_req_t *req)
+static esp_err_t file_ota_html_get(httpd_req_t* req)
 {
     char buf[16]; // dummy buffer
-    httpd_resp_send_chunk(req, (char *)ota_html_start, ota_html_end - ota_html_start);
+    httpd_resp_send_chunk(req, (char*)ota_html_start, ota_html_end - ota_html_start);
     return httpd_resp_send_chunk(req, buf, 0);
 
 }
@@ -69,10 +69,10 @@ static esp_err_t file_ota_html_get(httpd_req_t *req)
 extern const uint8_t dir_html_start[] asm("_binary_dir_html_start");
 extern const uint8_t dir_html_end[] asm("_binary_dir_html_end");
 
-static esp_err_t file_dir_html_get(httpd_req_t *req)
+static esp_err_t file_dir_html_get(httpd_req_t* req)
 {
     char buf[16]; // dummy buffer
-    httpd_resp_send_chunk(req, (char *)dir_html_start, dir_html_end - dir_html_start);
+    httpd_resp_send_chunk(req, (char*)dir_html_start, dir_html_end - dir_html_start);
     return httpd_resp_send_chunk(req, buf, 0);
 
 }
@@ -104,13 +104,23 @@ static esp_err_t resp_file(httpd_req_t* req, const char* filename)
     if (strstr(encoding, "gzip"))
         gzip_supported = true;
 
-    snprintf(buf, bufsize, "/spiffs%s%s", filename, gzip_supported ? ".gz" : "");
+    int len = snprintf(buf, bufsize, "/spiffs%s", filename);
+    char* p = strstr(buf, "?");
+    if (p != NULL)
+        *p = 0;
+    if (len < bufsize + 4 && gzip_supported) // ".gz" + null
+        strcat(buf, ".gz\0");
+
     FILE* file = fopen(buf, "rb");
     if (file == NULL)
     {
-        //ESP_LOGE(TAG, "File %s does not exist, going for non .gz file...", buf);
+        ESP_LOGE(TAG, "File %s does not exist, going for non .gz file...", buf);
         gzip_supported = false;
         snprintf(buf, bufsize, "/spiffs%s", filename);
+        char* p = strstr(buf, "?");
+        if (p != NULL)
+            *p = 0;
+
         file = fopen(buf, "rb");
         if (file == NULL)
         {
@@ -694,7 +704,7 @@ void serviceweb_init(char* buffer, size_t size, char* rxbuf, size_t rxsize)
     json_buf_size = size;
 
     rx_buf = rxbuf;
-    rx_buf_size = rxsize;  
+    rx_buf_size = rxsize;
 
     esp_event_loop_args_t loop_args = {
         .queue_size = 40,
