@@ -17,6 +17,8 @@
 #define MAX_FLOAT_BYTES 80
 #define SEND_TIMOEOUT_MS 50
 
+// #define DEBUG_PARAMETER 1
+
 typedef struct
 {
     int socket;
@@ -89,8 +91,8 @@ static esp_err_t resp_file(httpd_req_t* req, const char* filename)
 {
     esp_err_t err;
     int read = 0;
-    const int bufsize = 2048;
-    char* buf = (char*)calloc(bufsize, sizeof(char));
+    const int bufsize = 1460; // Default buffer size.
+    char* buf = (char*)calloc(bufsize, 1); // Allocate memory for the buffer.
     if (buf == NULL)
     {
         ESP_LOGE(TAG, "Error allocating memory for buffer when serving file %s", filename);
@@ -98,26 +100,45 @@ static esp_err_t resp_file(httpd_req_t* req, const char* filename)
     }
 
     bool gzip_supported = false;
+    bool keep_alive = false;
 
+    // Check if the client supports gzip and keep-alive.
     char encoding[64];
-    httpd_req_get_hdr_value_str(req, "Accept-Encoding", encoding, sizeof(encoding));
-    if (strstr(encoding, "gzip"))
-        gzip_supported = true;
+    char connection[32];
+    if (httpd_req_get_hdr_value_str(req, "Accept-Encoding", encoding, sizeof(encoding)) == ESP_OK)
+    {
+        if (strstr(encoding, "gzip"))
+            gzip_supported = true;
+    }
+    if (httpd_req_get_hdr_value_str(req, "Connection", connection, sizeof(connection)) == ESP_OK)
+    {
+        if (strstr(connection, "keep-alive"))
+            keep_alive = true;
+    }
 
-    int len = snprintf(buf, bufsize, "/spiffs%s", filename);
+    // Construct the file path.
+    snprintf(buf, bufsize, "/spiffs%s", filename);
     char* p = strstr(buf, "?");
     if (p != NULL)
-        *p = 0;
-    if (len < bufsize + 4 && gzip_supported) // ".gz" + null
-        strcat(buf, ".gz\0");
+        *p = 0; // Remove query parameters.
 
-    FILE* file = fopen(buf, "rb");
+    // Check for gzip file existence before trying it.
+    FILE* file = NULL;
+    if (gzip_supported)
+    {
+        // Attempt to open .gz file.
+        strncat(buf, ".gz", bufsize - strlen(buf) - 1);
+        file = fopen(buf, "rb");
+    }
+
     if (file == NULL)
     {
+        // Retry with the original file if .gz was not found.
         ESP_LOGE(TAG, "File %s does not exist, going for non .gz file...", buf);
         gzip_supported = false;
+
         snprintf(buf, bufsize, "/spiffs%s", filename);
-        char* p = strstr(buf, "?");
+        p = strstr(buf, "?");
         if (p != NULL)
             *p = 0;
 
@@ -131,9 +152,15 @@ static esp_err_t resp_file(httpd_req_t* req, const char* filename)
     }
 
     size_t file_size = get_file_size(file);
+    if (file_size == (size_t)-1)
+    {
+        ESP_LOGE(TAG, "Failed to get file size for %s", buf);
+        fclose(file);
+        free(buf);
+        return ESP_FAIL;
+    }
 
-    // ESP_LOGW(TAG, "Serving %s", buf);
-
+    // Set appropriate Content-Type based on file extension.
     if (strstr(filename, ".html") != NULL)
         httpd_resp_set_type(req, "text/html");
     else if (strstr(filename, ".js") != NULL)
@@ -143,7 +170,7 @@ static esp_err_t resp_file(httpd_req_t* req, const char* filename)
     else if (strstr(filename, ".svg") != NULL)
     {
         httpd_resp_set_type(req, "image/svg+xml");
-        httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=31536000"); // one year cache
+        httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=31536000"); // One year cache
     }
     else if (strstr(filename, ".png") != NULL)
         httpd_resp_set_type(req, "image/png");
@@ -164,6 +191,7 @@ static esp_err_t resp_file(httpd_req_t* req, const char* filename)
     else
         httpd_resp_set_type(req, "application/octet-stream");
 
+    // Set gzip header if gzip is supported and file is gzipped.
     if (gzip_supported)
     {
         err = httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
@@ -175,22 +203,39 @@ static esp_err_t resp_file(httpd_req_t* req, const char* filename)
             return ESP_FAIL;
         }
     }
-    err = httpd_resp_set_hdr(req, "Connection", "close");
-    if (err != ESP_OK)
+
+    // Set connection header based on client's preference.
+    if (keep_alive)
     {
-        ESP_LOGE(TAG, "Error setting connection header for file %s: %s", filename, esp_err_to_name(err));
-        fclose(file);
-        free(buf);
-        return ESP_FAIL;
+        err = httpd_resp_set_hdr(req, "Connection", "keep-alive");
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Error setting keep-alive header for file %s: %s", filename, esp_err_to_name(err));
+            fclose(file);
+            free(buf);
+            return ESP_FAIL;
+        }
+    }
+    else
+    {
+        err = httpd_resp_set_hdr(req, "Connection", "close");
+        if (err != ESP_OK)
+        {
+            ESP_LOGE(TAG, "Error setting connection header for file %s: %s", filename, esp_err_to_name(err));
+            fclose(file);
+            free(buf);
+            return ESP_FAIL;
+        }
     }
 
-    if (file_size <= bufsize)
+    if (file_size < bufsize)
     {
         if ((read = fread(buf, 1, bufsize, file)) > 0)
             httpd_resp_send(req, buf, file_size);
     }
     else
     {
+        // Send the file in chunks
         while ((read = fread(buf, 1, bufsize, file)) > 0)
         {
             err = httpd_resp_send_chunk(req, buf, read);
@@ -200,7 +245,7 @@ static esp_err_t resp_file(httpd_req_t* req, const char* filename)
                 break;
             }
         }
-        err = httpd_resp_send_chunk(req, buf, 0);
+        err = httpd_resp_send_chunk(req, buf, 0); // End of chunked transfer.
         if (err != ESP_OK)
             ESP_LOGE(TAG, "Error sending last chunk for file %s: %s", filename, esp_err_to_name(err));
     }
@@ -313,6 +358,9 @@ static bool web_post_newstate_int32(pp_t pp, int32_t i)
     if (!par_list_empty())
     {
         const char* name = pp_get_name(pp);
+#ifdef DEBUG_PARAMETER
+        ESP_LOGI(TAG, "%s: %s = %ld", __func__, name, i);
+#endif
         size_t len = strlen(NEWSTATE_INT32) + strlen(name) + MAX_FLOAT_BYTES;
         char* json = (char*)malloc(len);
         snprintf(json, len, NEWSTATE_INT32, name, i);
@@ -327,6 +375,9 @@ static bool web_post_newstate_int64(pp_t pp, int64_t i)
     if (!par_list_empty())
     {
         const char* name = pp_get_name(pp);
+#ifdef DEBUG_PARAMETER
+        ESP_LOGI(TAG, "%s: %s = %lld", __func__, name, i);
+#endif
         size_t len = strlen(NEWSTATE_INT64) + strlen(name) + MAX_FLOAT_BYTES;
         char* json = (char*)malloc(len);
         snprintf(json, len, NEWSTATE_INT64, name, i);
@@ -344,6 +395,9 @@ static bool web_post_newstate_string(pp_t pp, const char* str)
         if (str[0] == '{')
             format = NEWSTATE_JSON;
         const char* name = pp_get_name(pp);
+#ifdef DEBUG_PARAMETER
+        ESP_LOGI(TAG, "%s: %s = %s", __func__ , name, str);
+#endif
         size_t len = strlen(format) + strlen(name) + strlen(str) + 1;
         char* json = (char*)malloc(len);
         snprintf(json, len, format, name, str);
@@ -358,6 +412,9 @@ static bool web_post_newstate_float(pp_t pp, float f)
     if (!par_list_empty())
     {
         const char* name = pp_get_name(pp);
+#ifdef DEBUG_PARAMETER
+        ESP_LOGI(TAG, "%s: %s = %f", __func__, name, f);
+#endif
         size_t len = strlen(NEWSTATE_FLOAT) + strlen(name) + MAX_FLOAT_BYTES;
         char* json = (char*)malloc(len);
         snprintf(json, len, NEWSTATE_FLOAT, name, f);
@@ -372,6 +429,9 @@ static bool web_post_newstate_float_array(pp_t pp, pp_float_array_t* fsrc)
     if (!par_list_empty())
     {
         const char* name = pp_get_name(pp);
+#ifdef DEBUG_PARAMETER
+        ESP_LOGI(TAG, "%s: %s", __func__, name);
+#endif
         size_t len = 64;
         char* json = (char*)calloc(1, len);
         len = snprintf(json, len, NNEWSTATE_FLOAT, name) + 1;
@@ -387,6 +447,9 @@ static bool web_post_newstate_float_array(pp_t pp, pp_float_array_t* fsrc)
 //     if (!par_list_empty())
 //     {
 //         const char* name = pp_get_name(pp);
+// #ifdef DEBUG_PARAMETER
+//         ESP_LOGI(TAG, "%s: %s", __func__, name);
+// #endif
 //         size_t len = 64;
 //         char* json = (char*)calloc(1, len);
 //         len = snprintf(json, len, NNEWSTATE_BINARY, name) + 1;
