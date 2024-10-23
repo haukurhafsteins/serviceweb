@@ -238,8 +238,8 @@ static void print_tasks(httpd_req_t *req, char *buf, size_t bufsize, const char 
                         pxTaskStatus->uxCurrentPriority,
                         pxTaskStatus->uxBasePriority,
                         ulStatsAsPercentage,
-                        pxTaskStatus->usStackHighWaterMark, 0);
-                // pxTaskStatus->xCoreID);
+                        pxTaskStatus->usStackHighWaterMark,
+                        pxTaskStatus->xCoreID);
                 httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
                 buf += strlen((char *)buf);
             }
