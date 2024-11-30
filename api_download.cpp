@@ -13,10 +13,10 @@
 static const char* TAG = "FILE_SERVER";
 
 
-esp_err_t api_file_download_handler(httpd_req_t *req)
+esp_err_t api_file_download_handler(httpd_req_t* req)
 {
     char filepath[FILE_PATH_MAX];
-    FILE *file = NULL;
+    FILE* file = NULL;
     struct stat file_stat;
     int bytes_read;
 
@@ -41,9 +41,12 @@ esp_err_t api_file_download_handler(httpd_req_t *req)
 
     printf("File path: %s\n", filepath);
     printf("File size: %ld\n", file_stat.st_size);
-
+    char length_header[32];
+    snprintf(length_header, sizeof(length_header), "%ld", file_stat.st_size);
+    httpd_resp_set_hdr(req, "Content-Length", length_header);
+    
     // Check the file ending and set the appropriate content type
-    char *file_ending = strrchr(filepath, '.');
+    char* file_ending = strrchr(filepath, '.');
     if (file_ending)
     {
         if (strcmp(file_ending, ".pdf") == 0)
@@ -90,7 +93,7 @@ esp_err_t api_file_download_handler(httpd_req_t *req)
         httpd_resp_set_type(req, "application/octet-stream");
     }
 
-    char *filename = strrchr(filepath, '/');
+    char* filename = strrchr(filepath, '/');
     if (filename)
     {
         char buf[128];
@@ -98,7 +101,7 @@ esp_err_t api_file_download_handler(httpd_req_t *req)
         httpd_resp_set_hdr(req, "Content-Disposition", buf);
     }
 
-    char *chunk = (char *)malloc(API_BUFFSIZE);
+    char* chunk = (char*)malloc(API_BUFFSIZE);
     if (!chunk)
     {
         ESP_LOGE(TAG, "Failed to allocate memory for file download");
