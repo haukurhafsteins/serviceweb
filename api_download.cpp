@@ -74,6 +74,14 @@ esp_err_t api_file_download_handler(httpd_req_t *req)
             httpd_resp_set_type(req, "text/plain");
         else if (strcmp(file_ending, ".csv") == 0)
             httpd_resp_set_type(req, "text/csv");
+        else if (strcmp(file_ending, ".glb") == 0)
+            httpd_resp_set_type(req, "model/gltf-binary");
+        else if (strcmp(file_ending, ".gltf") == 0)
+            httpd_resp_set_type(req, "model/gltf+json");
+        else if (strcmp(file_ending, ".stl") == 0)
+            httpd_resp_set_type(req, "model/stl");
+        else if (strcmp(file_ending, ".obj") == 0)
+            httpd_resp_set_type(req, "model/obj");
         else
             httpd_resp_set_type(req, "application/octet-stream");
     }
