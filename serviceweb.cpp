@@ -6,6 +6,7 @@
 #include <errno.h>
 #include <map>
 #include <list>
+#include <string>
 #include "esp_log.h"
 #include "serviceweb.h"
 #include "httpss.h"
@@ -31,6 +32,11 @@ enum
     CMD_WS_HANDLER,
 };
 
+typedef struct {
+    const uint8_t *html_start;
+    const uint8_t *html_end;
+} file_get_t;
+
 extern esp_err_t ota_post_handler(httpd_req_t* req);
 extern esp_err_t sysmon_get_handler(httpd_req_t* req);
 extern void start_api_server(void);
@@ -54,29 +60,58 @@ static char* rx_buf = 0;
 static size_t rx_buf_size = 0;
 static pp_evloop_t evloop;
 ESP_EVENT_DEFINE_BASE(SERVWEB_EVENTS);
+static std::map<std::string, file_get_t> file_get_map;
+
 
 static void evloop_newstate(void* handler_arg, esp_event_base_t base, int32_t id, void* context);
 
-extern const uint8_t ota_html_start[] asm("_binary_ota_html_start");
-extern const uint8_t ota_html_end[] asm("_binary_ota_html_end");
-
-static esp_err_t file_ota_html_get(httpd_req_t* req)
+static void set_content_type(httpd_req_t* req, const char* filename)
 {
-    char buf[16]; // dummy buffer
-    httpd_resp_send_chunk(req, (char*)ota_html_start, ota_html_end - ota_html_start);
-    return httpd_resp_send_chunk(req, buf, 0);
-
+    if (strstr(filename, ".html") != NULL)
+        httpd_resp_set_type(req, "text/html");
+    else if (strstr(filename, ".js") != NULL)
+        httpd_resp_set_type(req, "application/javascript");
+    else if (strstr(filename, ".css") != NULL)
+        httpd_resp_set_type(req, "text/css");
+    else if (strstr(filename, ".svg") != NULL)
+    {
+        httpd_resp_set_type(req, "image/svg+xml");
+        httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=31536000"); // One year cache
+    }
+    else if (strstr(filename, ".png") != NULL)
+        httpd_resp_set_type(req, "image/png");
+    else if (strstr(filename, ".jpg") != NULL)
+        httpd_resp_set_type(req, "image/jpeg");
+    else if (strstr(filename, ".ico") != NULL)
+        httpd_resp_set_type(req, "image/x-icon");
+    else if (strstr(filename, ".json") != NULL)
+        httpd_resp_set_type(req, "application/json");
+    else if (strstr(filename, ".xml") != NULL)
+        httpd_resp_set_type(req, "application/xml");
+    else if (strstr(filename, ".pdf") != NULL)
+        httpd_resp_set_type(req, "application/pdf");
+    else if (strstr(filename, ".zip") != NULL)
+        httpd_resp_set_type(req, "application/zip");
+    else if (strstr(filename, ".txt") != NULL)
+        httpd_resp_set_type(req, "text/plain");
+    else
+        httpd_resp_set_type(req, "application/octet-stream");
 }
 
-extern const uint8_t dir_html_start[] asm("_binary_dir_html_start");
-extern const uint8_t dir_html_end[] asm("_binary_dir_html_end");
-
-static esp_err_t file_dir_html_get(httpd_req_t* req)
+static esp_err_t file_get(httpd_req_t* req)
 {
-    char buf[16]; // dummy buffer
-    httpd_resp_send_chunk(req, (char*)dir_html_start, dir_html_end - dir_html_start);
+    char buf[16] = {0}; // dummy buffer
+    if (file_get_map.contains(req->uri))
+    {
+        file_get_t file = file_get_map[req->uri];
+        set_content_type(req, req->uri);
+        httpd_resp_send_chunk(req, (char*)file.html_start, file.html_end - file.html_start);
+    }
+    else
+    {
+        ESP_LOGE(TAG, "File %s not found", req->uri);
+    }
     return httpd_resp_send_chunk(req, buf, 0);
-
 }
 
 static size_t get_file_size(FILE* file)
@@ -160,36 +195,7 @@ static esp_err_t resp_file(httpd_req_t* req, const char* filename)
         return ESP_FAIL;
     }
 
-    // Set appropriate Content-Type based on file extension.
-    if (strstr(filename, ".html") != NULL)
-        httpd_resp_set_type(req, "text/html");
-    else if (strstr(filename, ".js") != NULL)
-        httpd_resp_set_type(req, "application/javascript");
-    else if (strstr(filename, ".css") != NULL)
-        httpd_resp_set_type(req, "text/css");
-    else if (strstr(filename, ".svg") != NULL)
-    {
-        httpd_resp_set_type(req, "image/svg+xml");
-        httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=31536000"); // One year cache
-    }
-    else if (strstr(filename, ".png") != NULL)
-        httpd_resp_set_type(req, "image/png");
-    else if (strstr(filename, ".jpg") != NULL)
-        httpd_resp_set_type(req, "image/jpeg");
-    else if (strstr(filename, ".ico") != NULL)
-        httpd_resp_set_type(req, "image/x-icon");
-    else if (strstr(filename, ".json") != NULL)
-        httpd_resp_set_type(req, "application/json");
-    else if (strstr(filename, ".xml") != NULL)
-        httpd_resp_set_type(req, "application/xml");
-    else if (strstr(filename, ".pdf") != NULL)
-        httpd_resp_set_type(req, "application/pdf");
-    else if (strstr(filename, ".zip") != NULL)
-        httpd_resp_set_type(req, "application/zip");
-    else if (strstr(filename, ".txt") != NULL)
-        httpd_resp_set_type(req, "text/plain");
-    else
-        httpd_resp_set_type(req, "application/octet-stream");
+    set_content_type(req, filename);
 
     // Set gzip header if gzip is supported and file is gzipped.
     if (gzip_supported)
@@ -761,6 +767,12 @@ void register_files(const char* basePath, const char* path)
     closedir(dp);
 }
 
+bool serviceweb_register_file(const char* path, const uint8_t *dir_html_start, const uint8_t *dir_html_end)
+{
+    file_get_map[path] = {dir_html_start, dir_html_end};
+    return httpss_register_url(path, false, file_get, HTTP_GET, NULL);
+}
+
 void serviceweb_init(char* buffer, size_t size, char* rxbuf, size_t rxsize)
 {
     json_buf = buffer;
@@ -780,13 +792,20 @@ void serviceweb_init(char* buffer, size_t size, char* rxbuf, size_t rxsize)
     esp_event_loop_create(&loop_args, &evloop.loop_handle);
 }
 
+extern const uint8_t ota_html_start[] asm("_binary_ota_html_start");
+extern const uint8_t ota_html_end[] asm("_binary_ota_html_end");
+extern const uint8_t dir_html_start[] asm("_binary_dir_html_start");
+extern const uint8_t dir_html_end[] asm("_binary_dir_html_end");
+
 void serviceweb_start(void)
 {
     // httpss_register_url("/", false, get_index, HTTP_GET, NULL);
     httpss_register_url("/ws", true, ws_handler, HTTP_GET, NULL);
     httpss_register_url("/update", false, ota_post_handler, HTTP_POST, NULL);
-    httpss_register_url("/ota.html", false, file_ota_html_get, HTTP_GET, NULL);
-    httpss_register_url("/dir.html", false, file_dir_html_get, HTTP_GET, NULL);
+    serviceweb_register_file("/ota.html", ota_html_start, ota_html_end);
+    // httpss_register_url("/ota.html", false, file_ota_html_get, HTTP_GET, NULL);
+    serviceweb_register_file("/dir.html", dir_html_start, dir_html_end);
+    // httpss_register_url("/dir.html", false, file_dir_html_get, HTTP_GET, NULL);
     httpss_register_url("/metrics", false, sysmon_get_handler, HTTP_GET, NULL);
 
     start_api_server();
