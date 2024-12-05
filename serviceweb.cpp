@@ -58,8 +58,7 @@ static char* json_buf = 0;
 static size_t json_buf_size = 0;
 static char* rx_buf = 0;
 static size_t rx_buf_size = 0;
-static pp_evloop_t evloop;
-ESP_EVENT_DEFINE_BASE(SERVWEB_EVENTS);
+static pp_evloop_t *evloop;
 static std::map<std::string, file_get_t> file_get_map;
 
 
@@ -303,7 +302,7 @@ static void par_cleanup()
         if (it->second.size() == 0)
         {
             // ESP_LOGI(TAG, "%s: Unsubscribing parameter %s", __func__, pp_get_name(it->first));
-            pp_unsubscribe(it->first, &evloop, evloop_newstate);
+            pp_unsubscribe(it->first, evloop, evloop_newstate);
             it = pp_list.erase(it);
         }
         else
@@ -547,7 +546,7 @@ static void evloop_http_event(void* handler_arg, esp_event_base_t base, int32_t 
     switch (id)
     {
     case HTTP_SERVER_EVENT_DISCONNECTED:
-        err = evloop_post(evloop.loop_handle, evloop.base, CMD_SOCKET_CLOSED, &socfd, sizeof(int));
+        err = evloop_post(evloop->loop_handle, evloop->base, CMD_SOCKET_CLOSED, &socfd, sizeof(int));
         if (err != ESP_OK)
             ESP_LOGE(TAG, "%s: Error posting event: %s", __func__, esp_err_to_name(err));
         break;
@@ -581,7 +580,7 @@ static esp_err_t ws_handler(httpd_req_t* req)
     wsdata->socket = httpd_req_to_sockfd(req);
 
     // Send data to serveiceweb task
-    esp_err_t err = esp_event_post_to(evloop.loop_handle, evloop.base, CMD_WS_HANDLER, wsdata, sizeof(pp_websocket_data_t) + ws_pkt.len, pdMS_TO_TICKS(SEND_TIMOEOUT_MS));
+    esp_err_t err = esp_event_post_to(evloop->loop_handle, evloop->base, CMD_WS_HANDLER, wsdata, sizeof(pp_websocket_data_t) + ws_pkt.len, pdMS_TO_TICKS(SEND_TIMOEOUT_MS));
     if (err != ESP_OK)
         ESP_LOGE(TAG, "%s: Error posting event to serviceweb task: %s", __func__, esp_err_to_name(err));
     return err;
@@ -677,7 +676,7 @@ static void evloop_ws_handler(void* arg, esp_event_base_t event_base, int32_t ev
         {
             // If the parameter is already subscribed to or if subscribing is
             // successful, add the socket to the list of sockets for this parameter.
-            if (par_exist(pp) || pp_subscribe(pp, &evloop, evloop_newstate))
+            if (par_exist(pp) || pp_subscribe(pp, evloop, evloop_newstate))
             {
                 if (!par_socket_exist(pp, wsdata->socket))
                     par_add_socket(pp, wsdata->socket);
@@ -773,23 +772,14 @@ bool serviceweb_register_file(const char* path, const uint8_t *dir_html_start, c
     return httpss_register_url(path, false, file_get, HTTP_GET, NULL);
 }
 
-void serviceweb_init(char* buffer, size_t size, char* rxbuf, size_t rxsize)
+void serviceweb_init(pp_evloop_t *evloop, char* buffer, size_t size, char* rxbuf, size_t rxsize)
 {
+    ::evloop = evloop;
     json_buf = buffer;
     json_buf_size = size;
 
     rx_buf = rxbuf;
     rx_buf_size = rxsize;
-
-    esp_event_loop_args_t loop_args = {
-        .queue_size = 40,
-        .task_name = "servweb",
-        .task_priority = 4,
-        .task_stack_size = 1024 * 10,
-        .task_core_id = 0 };
-
-    evloop.base = SERVWEB_EVENTS;
-    esp_event_loop_create(&loop_args, &evloop.loop_handle);
 }
 
 extern const uint8_t ota_html_start[] asm("_binary_ota_html_start");
@@ -815,8 +805,8 @@ void serviceweb_start(void)
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_ON_CONNECTED, &evloop_http_event, NULL, NULL));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_DISCONNECTED, &evloop_http_event, NULL, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register_with(evloop.loop_handle, evloop.base, CMD_SOCKET_CLOSED, &evloop_http_event, NULL, NULL));
-    ESP_ERROR_CHECK(esp_event_handler_instance_register_with(evloop.loop_handle, evloop.base, CMD_WS_HANDLER, &evloop_ws_handler, NULL, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register_with(evloop->loop_handle, evloop->base, CMD_SOCKET_CLOSED, &evloop_http_event, NULL, NULL));
+    ESP_ERROR_CHECK(esp_event_handler_instance_register_with(evloop->loop_handle, evloop->base, CMD_WS_HANDLER, &evloop_ws_handler, NULL, NULL));
 }
 
 void serviceweb_stop(void)
