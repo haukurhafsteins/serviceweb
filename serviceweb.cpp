@@ -32,39 +32,40 @@ enum
     CMD_WS_HANDLER,
 };
 
-typedef struct {
+typedef struct
+{
     const uint8_t *html_start;
     const uint8_t *html_end;
+    bool gzip;
 } file_get_t;
 
-extern esp_err_t ota_post_handler(httpd_req_t* req);
-extern esp_err_t sysmon_get_handler(httpd_req_t* req);
+extern esp_err_t ota_post_handler(httpd_req_t *req);
+extern esp_err_t sysmon_get_handler(httpd_req_t *req);
 extern void start_api_server(void);
 
-static const char* SUBSCRIBE_RESP = "subscribeResp";
-static const char* RESP_MESSAGE = "{\"cmd\":\"%s\",\"data\":{\"name\":\"%s\", \"value\":";
-static const char* NEWSTATE_FLOAT = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%f}}";
-static const char* NEWSTATE_INT32 = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%ld}}";
-static const char* NEWSTATE_INT64 = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%lld}}";
-static const char* NEWSTATE_STRING = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":\"%s\"}}";
-static const char* NEWSTATE_JSON = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%s}}";
-static const char* UNSUBSCRIBE_MESSAGE = "{\"cmd\":\"unsubscribeResp\",\"data\":\"%s\"}";
+static const char *SUBSCRIBE_RESP = "subscribeResp";
+static const char *RESP_MESSAGE = "{\"cmd\":\"%s\",\"data\":{\"name\":\"%s\", \"value\":";
+static const char *NEWSTATE_FLOAT = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%f}}";
+static const char *NEWSTATE_INT32 = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%ld}}";
+static const char *NEWSTATE_INT64 = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%lld}}";
+static const char *NEWSTATE_STRING = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":\"%s\"}}";
+static const char *NEWSTATE_JSON = "{\"cmd\":\"newState\",\"data\":{\"name\":\"%s\", \"value\":%s}}";
+static const char *UNSUBSCRIBE_MESSAGE = "{\"cmd\":\"unsubscribeResp\",\"data\":\"%s\"}";
 
-static const char* NNEWSTATE_FLOAT = "{\"f\":\"%s\"}";
-//static const char* NNEWSTATE_BINARY = "{\"bin\":\"%s\"}";
+static const char *NNEWSTATE_FLOAT = "{\"f\":\"%s\"}";
+// static const char* NNEWSTATE_BINARY = "{\"bin\":\"%s\"}";
 
 static char TAG[] = "SERVWEB";
-static char* json_buf = 0;
+static char *json_buf = 0;
 static size_t json_buf_size = 0;
-static char* rx_buf = 0;
+static char *rx_buf = 0;
 static size_t rx_buf_size = 0;
 static pp_evloop_t *evloop;
 static std::map<std::string, file_get_t> file_get_map;
 
+static void evloop_newstate(void *handler_arg, esp_event_base_t base, int32_t id, void *context);
 
-static void evloop_newstate(void* handler_arg, esp_event_base_t base, int32_t id, void* context);
-
-static void set_content_type(httpd_req_t* req, const char* filename)
+static void set_content_type(httpd_req_t *req, const char *filename)
 {
     if (strstr(filename, ".html") != NULL)
         httpd_resp_set_type(req, "text/html");
@@ -97,23 +98,55 @@ static void set_content_type(httpd_req_t* req, const char* filename)
         httpd_resp_set_type(req, "application/octet-stream");
 }
 
-static esp_err_t file_get(httpd_req_t* req)
+static esp_err_t set_gz_support(httpd_req_t *req, bool &gzip_supported, bool &keep_alive)
+{
+    esp_err_t err = ESP_OK;
+    char encoding[64];
+    char connection[32];
+    gzip_supported = false;
+    keep_alive = false;
+    if (httpd_req_get_hdr_value_str(req, "Accept-Encoding", encoding, sizeof(encoding)) == ESP_OK)
+    {
+        if (strstr(encoding, "gzip"))
+        {
+            gzip_supported = true;
+            err = httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
+            if (err != ESP_OK)
+                return ESP_FAIL;
+        }
+    }
+    if (httpd_req_get_hdr_value_str(req, "Connection", connection, sizeof(connection)) == ESP_OK)
+    {
+        if (strstr(connection, "keep-alive"))
+        {
+            keep_alive = true;
+            if (keep_alive)
+                err = httpd_resp_set_hdr(req, "Connection", "keep-alive");
+            else
+                err = httpd_resp_set_hdr(req, "Connection", "close");
+        }
+    }
+    return err;
+}
+
+static esp_err_t resp_memory_file(httpd_req_t *req)
 {
     char buf[16] = {0}; // dummy buffer
-    if (file_get_map.contains(req->uri))
+    if (!file_get_map.contains(req->uri))
     {
-        file_get_t file = file_get_map[req->uri];
-        set_content_type(req, req->uri);
-        httpd_resp_send_chunk(req, (char*)file.html_start, file.html_end - file.html_start);
+        ESP_LOGE(TAG, "File %s not found as memory file", req->uri);
+        return httpd_resp_send_404(req);
     }
-    else
-    {
-        ESP_LOGE(TAG, "File %s not found", req->uri);
-    }
+
+    bool gzip_supported, keep_alive;
+    file_get_t file = file_get_map[req->uri];
+    set_content_type(req, req->uri);
+    set_gz_support(req, gzip_supported, keep_alive);
+    httpd_resp_send_chunk(req, (char *)file.html_start, file.html_end - file.html_start);
     return httpd_resp_send_chunk(req, buf, 0);
 }
 
-static size_t get_file_size(FILE* file)
+static size_t get_file_size(FILE *file)
 {
     fseek(file, 0, SEEK_END);
     size_t size = ftell(file);
@@ -121,12 +154,12 @@ static size_t get_file_size(FILE* file)
     return size;
 }
 
-static esp_err_t resp_file(httpd_req_t* req, const char* filename)
+static esp_err_t resp_file(httpd_req_t *req, const char *filename)
 {
     esp_err_t err;
     int read = 0;
-    const int bufsize = 1460; // Default buffer size.
-    char* buf = (char*)calloc(bufsize, 1); // Allocate memory for the buffer.
+    const int bufsize = 1460;               // Default buffer size.
+    char *buf = (char *)calloc(bufsize, 1); // Allocate memory for the buffer.
     if (buf == NULL)
     {
         ESP_LOGE(TAG, "Error allocating memory for buffer when serving file %s", filename);
@@ -136,28 +169,21 @@ static esp_err_t resp_file(httpd_req_t* req, const char* filename)
     bool gzip_supported = false;
     bool keep_alive = false;
 
-    // Check if the client supports gzip and keep-alive.
-    char encoding[64];
-    char connection[32];
-    if (httpd_req_get_hdr_value_str(req, "Accept-Encoding", encoding, sizeof(encoding)) == ESP_OK)
+    if (ESP_OK != set_gz_support(req, gzip_supported, keep_alive))
     {
-        if (strstr(encoding, "gzip"))
-            gzip_supported = true;
-    }
-    if (httpd_req_get_hdr_value_str(req, "Connection", connection, sizeof(connection)) == ESP_OK)
-    {
-        if (strstr(connection, "keep-alive"))
-            keep_alive = true;
+        ESP_LOGE(TAG, "Error setting gzip support for file %s", filename);
+        free(buf);
+        return ESP_FAIL;
     }
 
     // Construct the file path.
     snprintf(buf, bufsize, "/spiffs%s", filename);
-    char* p = strstr(buf, "?");
+    char *p = strstr(buf, "?");
     if (p != NULL)
         *p = 0; // Remove query parameters.
 
     // Check for gzip file existence before trying it.
-    FILE* file = NULL;
+    FILE *file = NULL;
     if (gzip_supported)
     {
         // Attempt to open .gz file.
@@ -196,43 +222,6 @@ static esp_err_t resp_file(httpd_req_t* req, const char* filename)
 
     set_content_type(req, filename);
 
-    // Set gzip header if gzip is supported and file is gzipped.
-    if (gzip_supported)
-    {
-        err = httpd_resp_set_hdr(req, "Content-Encoding", "gzip");
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG, "Error setting gzip header for file %s: %s", filename, esp_err_to_name(err));
-            fclose(file);
-            free(buf);
-            return ESP_FAIL;
-        }
-    }
-
-    // Set connection header based on client's preference.
-    if (keep_alive)
-    {
-        err = httpd_resp_set_hdr(req, "Connection", "keep-alive");
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG, "Error setting keep-alive header for file %s: %s", filename, esp_err_to_name(err));
-            fclose(file);
-            free(buf);
-            return ESP_FAIL;
-        }
-    }
-    else
-    {
-        err = httpd_resp_set_hdr(req, "Connection", "close");
-        if (err != ESP_OK)
-        {
-            ESP_LOGE(TAG, "Error setting connection header for file %s: %s", filename, esp_err_to_name(err));
-            fclose(file);
-            free(buf);
-            return ESP_FAIL;
-        }
-    }
-
     if (file_size < bufsize)
     {
         if ((read = fread(buf, 1, bufsize, file)) > 0)
@@ -262,12 +251,12 @@ static esp_err_t resp_file(httpd_req_t* req, const char* filename)
     return ESP_OK;
 }
 
-esp_err_t get_index(httpd_req_t* req)
+esp_err_t get_index(httpd_req_t *req)
 {
     return resp_file(req, "/spiffs/index.html");
 }
 
-esp_err_t get_web(httpd_req_t* req)
+esp_err_t get_web(httpd_req_t *req)
 {
     return resp_file(req, req->uri);
 }
@@ -310,7 +299,7 @@ static void par_cleanup()
     }
 }
 
-static void par_send_to_sockets(pp_t pp, char* json)
+static void par_send_to_sockets(pp_t pp, char *json)
 {
     if (!pp_is_enabled(pp))
         return;
@@ -324,7 +313,7 @@ static void par_send_to_sockets(pp_t pp, char* json)
         par_cleanup();
 }
 
-static void par_send_binary_to_sockets(pp_t pp, const char* json, size_t json_len, const void* bin, size_t bin_len)
+static void par_send_binary_to_sockets(pp_t pp, const char *json, size_t json_len, const void *bin, size_t bin_len)
 {
     if (!pp_is_enabled(pp))
         return;
@@ -362,12 +351,12 @@ static bool web_post_newstate_int32(pp_t pp, int32_t i)
 {
     if (!par_list_empty())
     {
-        const char* name = pp_get_name(pp);
+        const char *name = pp_get_name(pp);
 #ifdef DEBUG_PARAMETER
         ESP_LOGI(TAG, "%s: %s = %ld", __func__, name, i);
 #endif
         size_t len = strlen(NEWSTATE_INT32) + strlen(name) + MAX_FLOAT_BYTES;
-        char* json = (char*)malloc(len);
+        char *json = (char *)malloc(len);
         snprintf(json, len, NEWSTATE_INT32, name, i);
         par_send_to_sockets(pp, json);
         free(json);
@@ -379,12 +368,12 @@ static bool web_post_newstate_int64(pp_t pp, int64_t i)
 {
     if (!par_list_empty())
     {
-        const char* name = pp_get_name(pp);
+        const char *name = pp_get_name(pp);
 #ifdef DEBUG_PARAMETER
         ESP_LOGI(TAG, "%s: %s = %lld", __func__, name, i);
 #endif
         size_t len = strlen(NEWSTATE_INT64) + strlen(name) + MAX_FLOAT_BYTES;
-        char* json = (char*)malloc(len);
+        char *json = (char *)malloc(len);
         snprintf(json, len, NEWSTATE_INT64, name, i);
         par_send_to_sockets(pp, json);
         free(json);
@@ -392,19 +381,19 @@ static bool web_post_newstate_int64(pp_t pp, int64_t i)
     return true;
 }
 
-static bool web_post_newstate_string(pp_t pp, const char* str)
+static bool web_post_newstate_string(pp_t pp, const char *str)
 {
     if (!par_list_empty())
     {
-        const char* format = NEWSTATE_STRING;
+        const char *format = NEWSTATE_STRING;
         if (str[0] == '{')
             format = NEWSTATE_JSON;
-        const char* name = pp_get_name(pp);
+        const char *name = pp_get_name(pp);
 #ifdef DEBUG_PARAMETER
-        ESP_LOGI(TAG, "%s: %s = %s", __func__ , name, str);
+        ESP_LOGI(TAG, "%s: %s = %s", __func__, name, str);
 #endif
         size_t len = strlen(format) + strlen(name) + strlen(str) + 1;
-        char* json = (char*)malloc(len);
+        char *json = (char *)malloc(len);
         snprintf(json, len, format, name, str);
         par_send_to_sockets(pp, json);
         free(json);
@@ -416,12 +405,12 @@ static bool web_post_newstate_float(pp_t pp, float f)
 {
     if (!par_list_empty())
     {
-        const char* name = pp_get_name(pp);
+        const char *name = pp_get_name(pp);
 #ifdef DEBUG_PARAMETER
         ESP_LOGI(TAG, "%s: %s = %f", __func__, name, f);
 #endif
         size_t len = strlen(NEWSTATE_FLOAT) + strlen(name) + MAX_FLOAT_BYTES;
-        char* json = (char*)malloc(len);
+        char *json = (char *)malloc(len);
         snprintf(json, len, NEWSTATE_FLOAT, name, f);
         par_send_to_sockets(pp, json);
         free(json);
@@ -429,16 +418,16 @@ static bool web_post_newstate_float(pp_t pp, float f)
     return true;
 }
 
-static bool web_post_newstate_float_array(pp_t pp, pp_float_array_t* fsrc)
+static bool web_post_newstate_float_array(pp_t pp, pp_float_array_t *fsrc)
 {
     if (!par_list_empty())
     {
-        const char* name = pp_get_name(pp);
+        const char *name = pp_get_name(pp);
 #ifdef DEBUG_PARAMETER
         ESP_LOGI(TAG, "%s: %s", __func__, name);
 #endif
         size_t len = 64;
-        char* json = (char*)calloc(1, len);
+        char *json = (char *)calloc(1, len);
         len = snprintf(json, len, NNEWSTATE_FLOAT, name) + 1;
         len = (len % 4) ? (len + 4) / 4 * 4 : len;
         par_send_binary_to_sockets(pp, json, len, fsrc->data, fsrc->len * sizeof(float));
@@ -464,7 +453,7 @@ static bool web_post_newstate_float_array(pp_t pp, pp_float_array_t* fsrc)
 //     return true;
 // }
 
-static void write_to_json_buf(pp_t pp, const char* format, ...)
+static void write_to_json_buf(pp_t pp, const char *format, ...)
 {
     memset(json_buf, 0, json_buf_size);
 
@@ -484,7 +473,7 @@ static void write_to_json_buf(pp_t pp, const char* format, ...)
         strncat(json_buf, "\"\"}}", json_buf_size - len);
 }
 
-static void evloop_newstate(void* handler_arg, esp_event_base_t base, int32_t id, void* context)
+static void evloop_newstate(void *handler_arg, esp_event_base_t base, int32_t id, void *context)
 {
     pp_t pp = (pp_t)handler_arg;
 
@@ -506,25 +495,25 @@ static void evloop_newstate(void* handler_arg, esp_event_base_t base, int32_t id
     switch (type)
     {
     case TYPE_INT32:
-        web_post_newstate_int32(pp, *((int32_t*)context));
+        web_post_newstate_int32(pp, *((int32_t *)context));
         break;
     case TYPE_INT64:
-        web_post_newstate_int64(pp, *((int64_t*)context));
+        web_post_newstate_int64(pp, *((int64_t *)context));
         break;
     case TYPE_BOOL:
-        web_post_newstate_int32(pp, *((bool*)context));
+        web_post_newstate_int32(pp, *((bool *)context));
         break;
     case TYPE_FLOAT:
-        web_post_newstate_float(pp, *((float*)context));
+        web_post_newstate_float(pp, *((float *)context));
         break;
     case TYPE_FLOAT_ARRAY:
-        web_post_newstate_float_array(pp, ((pp_float_array_t*)context));
+        web_post_newstate_float_array(pp, ((pp_float_array_t *)context));
         break;
     case TYPE_STRING:
-        web_post_newstate_string(pp, (char*)context);
+        web_post_newstate_string(pp, (char *)context);
         break;
     case TYPE_BINARY:
-        //web_post_newstate_binary(pp, (char *)context); // TODO, length is missing
+        // web_post_newstate_binary(pp, (char *)context); // TODO, length is missing
         break;
     default:
         ESP_LOGW(TAG, "unsupported type %d", type);
@@ -532,17 +521,17 @@ static void evloop_newstate(void* handler_arg, esp_event_base_t base, int32_t id
     }
 }
 
-static esp_err_t evloop_post(esp_event_loop_handle_t loop_handle, esp_event_base_t loop_base, int32_t id, void* data, size_t data_size)
+static esp_err_t evloop_post(esp_event_loop_handle_t loop_handle, esp_event_base_t loop_base, int32_t id, void *data, size_t data_size)
 {
     if (loop_handle == NULL)
         return esp_event_post(loop_base, id, data, data_size, pdMS_TO_TICKS(SEND_TIMOEOUT_MS));
     return esp_event_post_to(loop_handle, loop_base, id, data, data_size, pdMS_TO_TICKS(SEND_TIMOEOUT_MS));
 }
 
-static void evloop_http_event(void* handler_arg, esp_event_base_t base, int32_t id, void* context)
+static void evloop_http_event(void *handler_arg, esp_event_base_t base, int32_t id, void *context)
 {
     esp_err_t err;
-    int socfd = *(int*)context;
+    int socfd = *(int *)context;
     switch (id)
     {
     case HTTP_SERVER_EVENT_DISCONNECTED:
@@ -561,15 +550,15 @@ static void evloop_http_event(void* handler_arg, esp_event_base_t base, int32_t 
     }
 }
 
-static esp_err_t ws_handler(httpd_req_t* req)
+static esp_err_t ws_handler(httpd_req_t *req)
 {
     if (req->method == HTTP_GET)
         return ESP_OK;
 
-    pp_websocket_data_t* wsdata = (pp_websocket_data_t*)rx_buf;
+    pp_websocket_data_t *wsdata = (pp_websocket_data_t *)rx_buf;
     httpd_ws_frame_t ws_pkt = {};
     ws_pkt.type = HTTPD_WS_TYPE_TEXT;
-    ws_pkt.payload = (uint8_t*)wsdata->payload;
+    ws_pkt.payload = (uint8_t *)wsdata->payload;
     if (ESP_OK != httpd_ws_recv_frame(req, &ws_pkt, rx_buf_size - 1 - sizeof(pp_websocket_data_t)))
     {
         ESP_LOGE(TAG, "%s: Error receiving websocket frame", __func__);
@@ -586,15 +575,15 @@ static esp_err_t ws_handler(httpd_req_t* req)
     return err;
 }
 
-static void evloop_ws_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
+static void evloop_ws_handler(void *arg, esp_event_base_t event_base, int32_t event_id, void *event_data)
 {
-    pp_websocket_data_t* wsdata = (pp_websocket_data_t*)event_data;
+    pp_websocket_data_t *wsdata = (pp_websocket_data_t *)event_data;
     // ESP_LOGI(TAG, "Payload: %s", wsdata->payload);
 
-    cJSON* doc = cJSON_Parse(wsdata->payload);
+    cJSON *doc = cJSON_Parse(wsdata->payload);
     if (doc == NULL)
     {
-        const char* error_ptr = cJSON_GetErrorPtr();
+        const char *error_ptr = cJSON_GetErrorPtr();
         if (error_ptr != NULL)
         {
             ESP_LOGE(TAG, "cJSON error : %s", error_ptr);
@@ -602,18 +591,18 @@ static void evloop_ws_handler(void* arg, esp_event_base_t event_base, int32_t ev
         return;
     }
 
-    const cJSON* cmd = cJSON_GetObjectItemCaseSensitive(doc, "cmd");
+    const cJSON *cmd = cJSON_GetObjectItemCaseSensitive(doc, "cmd");
     if (!cJSON_IsString(cmd) || cmd->valuestring == NULL)
         goto exit;
 
     //----------------- publish -----------------
     if (0 == strcmp(cmd->valuestring, "publish"))
     {
-        const cJSON* data = cJSON_GetObjectItemCaseSensitive(doc, "data");
+        const cJSON *data = cJSON_GetObjectItemCaseSensitive(doc, "data");
         if (!cJSON_IsObject(data))
             goto exit;
 
-        const cJSON* name = cJSON_GetObjectItemCaseSensitive(data, "name");
+        const cJSON *name = cJSON_GetObjectItemCaseSensitive(data, "name");
         if (!cJSON_IsString(name) || name->valuestring == NULL)
             goto exit;
 
@@ -621,7 +610,7 @@ static void evloop_ws_handler(void* arg, esp_event_base_t event_base, int32_t ev
         if (pp == NULL)
             goto exit;
 
-        const cJSON* value = cJSON_GetObjectItemCaseSensitive(data, "value");
+        const cJSON *value = cJSON_GetObjectItemCaseSensitive(data, "value");
 
         parameter_type_t pp_type = pp_get_type(pp);
         switch (pp_type)
@@ -663,7 +652,7 @@ static void evloop_ws_handler(void* arg, esp_event_base_t event_base, int32_t ev
     }
     else
     {
-        const cJSON* parname = cJSON_GetObjectItemCaseSensitive(doc, "data");
+        const cJSON *parname = cJSON_GetObjectItemCaseSensitive(doc, "data");
         if (!cJSON_IsString(parname) || parname->valuestring == NULL)
             goto exit;
 
@@ -713,13 +702,13 @@ exit:
     cJSON_Delete(doc);
 }
 
-void register_files(const char* basePath, const char* path)
+void register_files(const char *basePath, const char *path)
 {
-    struct dirent* entry;
+    struct dirent *entry;
     struct stat statbuf;
-    char* fullPath = (char*)malloc(10000);
+    char *fullPath = (char *)malloc(10000);
 
-    DIR* dp = opendir(path);
+    DIR *dp = opendir(path);
     if (dp == NULL)
     {
         perror("Unable to open directory");
@@ -756,7 +745,7 @@ void register_files(const char* basePath, const char* path)
             // If the url ends with .gz, register the url without the .gz
             if (strstr(fullPath, ".gz") != NULL)
             {
-                char* dot = strrchr(fullPath, '.');
+                char *dot = strrchr(fullPath, '.');
                 *dot = '\0';
                 httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET, NULL);
             }
@@ -766,13 +755,13 @@ void register_files(const char* basePath, const char* path)
     closedir(dp);
 }
 
-bool serviceweb_register_file(const char* path, const uint8_t *dir_html_start, const uint8_t *dir_html_end)
+bool serviceweb_register_memory_file(const char *path, const uint8_t *start, const uint8_t *end, bool gzip)
 {
-    file_get_map[path] = {dir_html_start, dir_html_end};
-    return httpss_register_url(path, false, file_get, HTTP_GET, NULL);
+    file_get_map[path] = {start, end, gzip};
+    return httpss_register_url(path, false, resp_memory_file, HTTP_GET, NULL);
 }
 
-void serviceweb_init(pp_evloop_t *evloop, char* buffer, size_t size, char* rxbuf, size_t rxsize)
+void serviceweb_init(pp_evloop_t *evloop, char *buffer, size_t size, char *rxbuf, size_t rxsize)
 {
     ::evloop = evloop;
     json_buf = buffer;
@@ -782,25 +771,16 @@ void serviceweb_init(pp_evloop_t *evloop, char* buffer, size_t size, char* rxbuf
     rx_buf_size = rxsize;
 }
 
-extern const uint8_t ota_html_start[] asm("_binary_ota_html_start");
-extern const uint8_t ota_html_end[] asm("_binary_ota_html_end");
-extern const uint8_t dir_html_start[] asm("_binary_dir_html_start");
-extern const uint8_t dir_html_end[] asm("_binary_dir_html_end");
-
 void serviceweb_start(void)
 {
     // httpss_register_url("/", false, get_index, HTTP_GET, NULL);
     httpss_register_url("/ws", true, ws_handler, HTTP_GET, NULL);
     httpss_register_url("/update", false, ota_post_handler, HTTP_POST, NULL);
-    serviceweb_register_file("/ota.html", ota_html_start, ota_html_end);
-    // httpss_register_url("/ota.html", false, file_ota_html_get, HTTP_GET, NULL);
-    serviceweb_register_file("/dir.html", dir_html_start, dir_html_end);
-    // httpss_register_url("/dir.html", false, file_dir_html_get, HTTP_GET, NULL);
     httpss_register_url("/metrics", false, sysmon_get_handler, HTTP_GET, NULL);
 
     start_api_server();
 
-    const char* path = "/spiffs/";
+    const char *path = "/spiffs/";
     register_files(path, path);
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_ON_CONNECTED, &evloop_http_event, NULL, NULL));

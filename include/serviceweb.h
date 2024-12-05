@@ -9,7 +9,7 @@ void serviceweb_init(pp_evloop_t *evloop, char* txbuf, size_t size, char* rxbuf,
 void serviceweb_start(void);
 void serviceweb_stop(void);
 void serviceweb_set_nvs_namespace(const char *name);
-bool serviceweb_register_file(const char* path, const uint8_t *dir_html_start, const uint8_t *dir_html_end);
+bool serviceweb_register_memory_file(const char* path, const uint8_t *start, const uint8_t *end, bool gzip);
 
 #ifdef __cplusplus
 }
