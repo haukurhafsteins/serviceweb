@@ -16,7 +16,7 @@
 #include "pp.h"
 
 #define MAX_FLOAT_BYTES 80
-#define SEND_TIMOEOUT_MS 50
+#define SEND_TIMOEOUT_MS 100
 
 // #define DEBUG_PARAMETER 1
 
