@@ -65,37 +65,57 @@ static std::map<std::string, file_get_t> file_get_map;
 
 static void evloop_newstate(void *handler_arg, esp_event_base_t base, int32_t id, void *context);
 
-static void set_content_type(httpd_req_t *req, const char *filename)
+void serviceweb_set_content_type(httpd_req_t *req)
 {
-    if (strstr(filename, ".html") != NULL)
-        httpd_resp_set_type(req, "text/html");
-    else if (strstr(filename, ".js") != NULL)
-        httpd_resp_set_type(req, "application/javascript");
-    else if (strstr(filename, ".css") != NULL)
-        httpd_resp_set_type(req, "text/css");
-    else if (strstr(filename, ".svg") != NULL)
+    // Find the file ending
+    char *file_ending = strrchr(req->uri, '.');
+    if (file_ending)
     {
-        httpd_resp_set_type(req, "image/svg+xml");
-        httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=31536000"); // One year cache
+        if (strcmp(file_ending, ".pdf") == 0)
+            httpd_resp_set_type(req, "application/pdf");
+        else if (strcmp(file_ending, ".jpg") == 0)
+            httpd_resp_set_type(req, "image/jpeg");
+        else if (strcmp(file_ending, ".png") == 0)
+            httpd_resp_set_type(req, "image/png");
+        else if (strcmp(file_ending, ".gif") == 0)
+            httpd_resp_set_type(req, "image/gif");
+        else if (strcmp(file_ending, ".html") == 0)
+            httpd_resp_set_type(req, "text/html");
+        else if (strcmp(file_ending, ".css") == 0)
+            httpd_resp_set_type(req, "text/css");
+        else if (strcmp(file_ending, ".js") == 0)
+            httpd_resp_set_type(req, "application/javascript");
+        else if (strcmp(file_ending, ".json") == 0)
+            httpd_resp_set_type(req, "application/json");
+        else if (strcmp(file_ending, ".xml") == 0)
+            httpd_resp_set_type(req, "application/xml");
+        else if (strcmp(file_ending, ".zip") == 0)
+            httpd_resp_set_type(req, "application/zip");
+        else if (strcmp(file_ending, ".gz") == 0)
+            httpd_resp_set_type(req, "application/gzip");
+        else if (strcmp(file_ending, ".tar") == 0)
+            httpd_resp_set_type(req, "application/x-tar");
+        else if (strcmp(file_ending, ".txt") == 0)
+            httpd_resp_set_type(req, "text/plain");
+        else if (strcmp(file_ending, ".csv") == 0)
+            httpd_resp_set_type(req, "text/csv");
+        else if (strcmp(file_ending, ".glb") == 0)
+            httpd_resp_set_type(req, "model/gltf-binary");
+        else if (strcmp(file_ending, ".gltf") == 0)
+            httpd_resp_set_type(req, "model/gltf+json");
+        else if (strcmp(file_ending, ".stl") == 0)
+            httpd_resp_set_type(req, "model/stl");
+        else if (strcmp(file_ending, ".obj") == 0)
+            httpd_resp_set_type(req, "model/obj");
+        else
+            httpd_resp_set_type(req, "application/octet-stream");
     }
-    else if (strstr(filename, ".png") != NULL)
-        httpd_resp_set_type(req, "image/png");
-    else if (strstr(filename, ".jpg") != NULL)
-        httpd_resp_set_type(req, "image/jpeg");
-    else if (strstr(filename, ".ico") != NULL)
-        httpd_resp_set_type(req, "image/x-icon");
-    else if (strstr(filename, ".json") != NULL)
-        httpd_resp_set_type(req, "application/json");
-    else if (strstr(filename, ".xml") != NULL)
-        httpd_resp_set_type(req, "application/xml");
-    else if (strstr(filename, ".pdf") != NULL)
-        httpd_resp_set_type(req, "application/pdf");
-    else if (strstr(filename, ".zip") != NULL)
-        httpd_resp_set_type(req, "application/zip");
-    else if (strstr(filename, ".txt") != NULL)
-        httpd_resp_set_type(req, "text/plain");
     else
+    {
         httpd_resp_set_type(req, "application/octet-stream");
+    }  
+
+//    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=31536000"); // One year cache      
 }
 
 static esp_err_t set_gz_support(httpd_req_t *req, bool &gzip_supported, bool &keep_alive)
@@ -140,7 +160,7 @@ static esp_err_t resp_memory_file(httpd_req_t *req)
 
     bool gzip_supported, keep_alive;
     file_get_t file = file_get_map[req->uri];
-    set_content_type(req, req->uri);
+    serviceweb_set_content_type(req);
     set_gz_support(req, gzip_supported, keep_alive);
     httpd_resp_send_chunk(req, (char *)file.html_start, file.html_end - file.html_start);
     return httpd_resp_send_chunk(req, buf, 0);
@@ -154,7 +174,7 @@ static size_t get_file_size(FILE *file)
     return size;
 }
 
-static esp_err_t resp_file(httpd_req_t *req, const char *filename)
+static esp_err_t resp_file(httpd_req_t *req)
 {
     esp_err_t err;
     int read = 0;
@@ -162,7 +182,7 @@ static esp_err_t resp_file(httpd_req_t *req, const char *filename)
     char *buf = (char *)calloc(bufsize, 1); // Allocate memory for the buffer.
     if (buf == NULL)
     {
-        ESP_LOGE(TAG, "Error allocating memory for buffer when serving file %s", filename);
+        ESP_LOGE(TAG, "Error allocating memory for buffer when serving file %s", req->uri);
         return ESP_FAIL;
     }
 
@@ -171,13 +191,13 @@ static esp_err_t resp_file(httpd_req_t *req, const char *filename)
 
     if (ESP_OK != set_gz_support(req, gzip_supported, keep_alive))
     {
-        ESP_LOGE(TAG, "Error setting gzip support for file %s", filename);
+        ESP_LOGE(TAG, "Error setting gzip support for file %s", req->uri);
         free(buf);
         return ESP_FAIL;
     }
 
     // Construct the file path.
-    snprintf(buf, bufsize, "/spiffs%s", filename);
+    snprintf(buf, bufsize, "/spiffs%s", req->uri);
     char *p = strstr(buf, "?");
     if (p != NULL)
         *p = 0; // Remove query parameters.
@@ -197,7 +217,7 @@ static esp_err_t resp_file(httpd_req_t *req, const char *filename)
         ESP_LOGE(TAG, "File %s does not exist, going for non .gz file...", buf);
         gzip_supported = false;
 
-        snprintf(buf, bufsize, "/spiffs%s", filename);
+        snprintf(buf, bufsize, "/spiffs%s", req->uri);
         p = strstr(buf, "?");
         if (p != NULL)
             *p = 0;
@@ -220,7 +240,7 @@ static esp_err_t resp_file(httpd_req_t *req, const char *filename)
         return ESP_FAIL;
     }
 
-    set_content_type(req, filename);
+    serviceweb_set_content_type(req);
 
     if (file_size < bufsize)
     {
@@ -235,30 +255,19 @@ static esp_err_t resp_file(httpd_req_t *req, const char *filename)
             err = httpd_resp_send_chunk(req, buf, read);
             if (err != ESP_OK)
             {
-                ESP_LOGE(TAG, "Error sending chunk for file %s: %s", filename, esp_err_to_name(err));
+                ESP_LOGE(TAG, "Error sending chunk for file %s: %s", req->uri, esp_err_to_name(err));
                 break;
             }
         }
         err = httpd_resp_send_chunk(req, buf, 0); // End of chunked transfer.
         if (err != ESP_OK)
-            ESP_LOGE(TAG, "Error sending last chunk for file %s: %s", filename, esp_err_to_name(err));
+            ESP_LOGE(TAG, "Error sending last chunk for file %s: %s", req->uri, esp_err_to_name(err));
     }
 
     fclose(file);
-
     free(buf);
 
     return ESP_OK;
-}
-
-esp_err_t get_index(httpd_req_t *req)
-{
-    return resp_file(req, "/spiffs/index.html");
-}
-
-esp_err_t get_web(httpd_req_t *req)
-{
-    return resp_file(req, req->uri);
 }
 
 //-- Parameter handling --------------------------------------------------------
@@ -740,14 +749,14 @@ void register_files(const char *basePath, const char *path)
         else
         {
             // Register URL for files, adjusting the path as before
-            httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET, NULL);
+            httpss_register_url(fullPath + strlen(basePath), false, resp_file, HTTP_GET, NULL);
 
             // If the url ends with .gz, register the url without the .gz
             if (strstr(fullPath, ".gz") != NULL)
             {
                 char *dot = strrchr(fullPath, '.');
                 *dot = '\0';
-                httpss_register_url(fullPath + strlen(basePath), false, get_web, HTTP_GET, NULL);
+                httpss_register_url(fullPath + strlen(basePath), false, resp_file, HTTP_GET, NULL);
             }
         }
     }
@@ -773,7 +782,6 @@ void serviceweb_init(pp_evloop_t *evloop, char *buffer, size_t size, char *rxbuf
 
 void serviceweb_start(void)
 {
-    // httpss_register_url("/", false, get_index, HTTP_GET, NULL);
     httpss_register_url("/ws", true, ws_handler, HTTP_GET, NULL);
     httpss_register_url("/update", false, ota_post_handler, HTTP_POST, NULL);
     httpss_register_url("/metrics", false, sysmon_get_handler, HTTP_GET, NULL);
