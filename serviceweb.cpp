@@ -711,7 +711,7 @@ exit:
     cJSON_Delete(doc);
 }
 
-void register_files(const char *basePath, const char *path)
+void serviceweb_register_files(const char *basePath, const char *path)
 {
     struct dirent *entry;
     struct stat statbuf;
@@ -744,7 +744,7 @@ void register_files(const char *basePath, const char *path)
         // If the entry is a directory, recurse into it
         if (S_ISDIR(statbuf.st_mode))
         {
-            register_files(basePath, fullPath);
+            serviceweb_register_files(basePath, fullPath);
         }
         else
         {
@@ -788,8 +788,8 @@ void serviceweb_start(void)
 
     start_api_server();
 
-    const char *path = "/spiffs/";
-    register_files(path, path);
+    //const char *path = "/spiffs/";
+    //register_files(path, path);
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_ON_CONNECTED, &evloop_http_event, NULL, NULL));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_DISCONNECTED, &evloop_http_event, NULL, NULL));
