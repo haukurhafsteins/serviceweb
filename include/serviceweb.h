@@ -10,6 +10,8 @@ void serviceweb_start(void);
 void serviceweb_stop(void);
 void serviceweb_set_nvs_namespace(const char *name);
 bool serviceweb_register_memory_file(const char* path, const uint8_t *start, const uint8_t *end, bool gzip);
+void serviceweb_register_files(const char *basePath, const char *path);
+
 
 #ifdef __cplusplus
 }
