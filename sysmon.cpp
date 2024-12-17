@@ -219,7 +219,7 @@ static void print_tasks(httpd_req_t *req, char *buf, size_t bufsize, const char 
             const char *task_state[6] = {"Running", "Ready", "Blocked", "Suspended", "Deleted", "Invalid"};
             const char *tasks_header = "<tr><th>Name</th><th>Nr.</th><th>State</th><th>Current Priority</th><th>Base Priority</th><th>Run Time (%)</th><th>Stack High</th><th>Core</th></tr>";
             httpd_resp_send_chunk(req, hdr_tasks_begin, HTTPD_RESP_USE_STRLEN);
-            sprintf(buf, "<p>Free Heap Size: %d</p>", xPortGetFreeHeapSize());
+            snprintf(buf, bufsize, "<p>Free Heap Size: %d</p>", xPortGetFreeHeapSize());
             httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
             httpd_resp_send_chunk(req, tasks_header, HTTPD_RESP_USE_STRLEN);
             for (x = 0; x < uxArraySize; x++)
@@ -231,7 +231,7 @@ static void print_tasks(httpd_req_t *req, char *buf, size_t bufsize, const char 
                 ulStatsAsPercentage = pxTaskStatus->ulRunTimeCounter / ulTotalRunTime;
 
                 // "<tr><th>Name</th><th>Nr.</th><th>State</th><th>Current Priority</th><th>Base Priority</th><th>Run Time (%%)</th><th>Stack High</th></tr>"
-                sprintf(buf, "<tr><td>%s</td><td>%d</td><td>%s</td><td>%d</td><td>%d</td><td>%lu</td><td>%lu</td><td>%d</td></tr>",
+                snprintf(buf, bufsize, "<tr><td>%s</td><td>%d</td><td>%s</td><td>%d</td><td>%d</td><td>%lu</td><td>%lu</td><td>%d</td></tr>",
                         pxTaskStatus->pcTaskName,
                         pxTaskStatus->xTaskNumber,
                         task_state[pxTaskStatus->eCurrentState],
