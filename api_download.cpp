@@ -12,10 +12,12 @@
 
 static const char *TAG = "FILE_SERVER";
 
-extern void serviceweb_set_content_type(httpd_req_t *req);
+extern void serviceweb_set_content_type(httpd_req_t *req, const char *filename);
 
 esp_err_t api_file_download_handler(httpd_req_t *req)
 {
+    printf("api_file_download_handler, file: %s\n", req->uri);
+
     char filepath[FILE_PATH_MAX];
     FILE *file = NULL;
     struct stat file_stat;
@@ -46,7 +48,7 @@ esp_err_t api_file_download_handler(httpd_req_t *req)
     snprintf(length_header, sizeof(length_header), "%ld", file_stat.st_size);
     //httpd_resp_set_hdr(req, "Content-Length", length_header);
 
-    serviceweb_set_content_type(req);
+    serviceweb_set_content_type(req, filepath);
 
     char *filename = strrchr(filepath, '/');
     if (filename)
