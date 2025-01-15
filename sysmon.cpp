@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <memory>
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
@@ -149,6 +150,9 @@ static void print_public_parameters(httpd_req_t *req, char *buf, size_t bufsize)
     httpd_resp_send_chunk(req, pp_header, HTTPD_RESP_USE_STRLEN);
     pp_info_t info;
     int index = 0;
+    size_t strBufLen = 1024;
+    char *strBuf = (char *)malloc(strBufLen);
+
     while (index != -1)
     {
         index = pp_get_info(index, &info);
@@ -171,8 +175,9 @@ static void print_public_parameters(httpd_req_t *req, char *buf, size_t bufsize)
                      index, "Float[]", info.name, info.owner ? info.owner->base : str, info.subscriptions);
             break;
         case TYPE_STRING:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>String</td><td>%s</td><td>%s</td><td>%d</td><td>--</td></tr>",
-                     index, info.name, info.owner ? info.owner->base : str, info.subscriptions);
+        pp_get_as_string(pp_get(info.name), strBuf, &strBufLen, false);
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>String</td><td>%s</td><td>%s</td><td>%d</td><td>%s</td></tr>",
+                     index, info.name, info.owner ? info.owner->base : str, info.subscriptions, strBuf);
             break;
         case TYPE_BINARY:
             snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>--</td></tr>",
@@ -192,6 +197,7 @@ static void print_public_parameters(httpd_req_t *req, char *buf, size_t bufsize)
         index = pp_get_info(index, &info);
     }
     httpd_resp_send_chunk(req, hdr_table_end, HTTPD_RESP_USE_STRLEN);
+    free(strBuf);
 }
 
 static void print_tasks(httpd_req_t *req, char *buf, size_t bufsize, const char *param)
