@@ -181,11 +181,12 @@ static esp_err_t resp_memory_file(httpd_req_t* req)
 
     bool gzip_supported, keep_alive;
     file_get_t file = file_get_map[buf];
-    free(buf);
 
     set_gz_support(req, gzip_supported, keep_alive);
     httpd_resp_send_chunk(req, (char*)file.html_start, file.html_end - file.html_start);
-    return httpd_resp_send_chunk(req, buf, 0);
+    esp_err_t ret = httpd_resp_send_chunk(req, buf, 0);
+    free(buf);
+    return ret;
 }
 
 static size_t get_file_size(FILE* file)
