@@ -51,6 +51,29 @@ static const char *HTML_DOC_BODY_TO_END = "<script type=\"text/javascript\">\
 // static httpd_handle_t server = NULL;
 // static int open_sockets = 0;
 
+static bool nvs_open_storage(nvs_open_mode_t open_mode, nvs_handle_t *h)
+{
+    esp_err_t err = nvs_open(nvs_namespace, open_mode, h);
+    if (ESP_OK == err)
+        return true;
+    ESP_LOGE(TAG, "%s: %s - (%s)", __func__, nvs_namespace, esp_err_to_name(err));
+    return false;
+}
+static size_t nvs_get_size(const char *mem_name)
+{
+    size_t required_size = 0;
+    if (mem_name == NULL)
+    {
+        ESP_LOGE(TAG, "%s: Pointer to name is NULL", __func__);
+        return 0;
+    }
+
+    nvs_handle_t h;
+    if (nvs_open_storage(NVS_READONLY, &h))
+        nvs_get_str(h, mem_name, NULL, &required_size);
+    return required_size;
+}
+
 static void print_buttons(httpd_req_t *req, char *buf, size_t bufsize)
 {
     const char *p = ethernet_get_ip();
@@ -151,45 +174,53 @@ static void print_public_parameters(httpd_req_t *req, char *buf, size_t bufsize)
     pp_info_t info;
     int index = 0;
     size_t strBufLen = 1024;
-    char *strBuf = (char *)malloc(strBufLen);
+    char *strBuf = NULL;
 
     while (index != -1)
     {
         index = pp_get_info(index, &info);
-        const char *str = "--";
+        const char *noBaseStr = "--";
+        const char *tmp;
 
         switch (info.type)
         {
         case TYPE_INT32:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>%ld</td></tr>",
-                     index, "int32", info.name, info.owner ? info.owner->base : str, info.subscriptions, info.valueptr != NULL ? *((int32_t *)info.valueptr) : 0);
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>int32</td><td>%s</td><td>%s</td><td>%d</td><td>%ld</td></tr>",
+                     index, info.name, info.owner ? info.owner->base : noBaseStr, info.subscriptions, info.valueptr != NULL ? *((int32_t *)info.valueptr) : 0);
             break;
         case TYPE_FLOAT:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>%f</td></tr>",
-                     index, "Float", info.name, info.owner ? info.owner->base : str, info.subscriptions, info.valueptr != NULL ? *((float *)info.valueptr) : 0);
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>float</td><td>%s</td><td>%s</td><td>%d</td><td>%f</td></tr>",
+                     index, info.name, info.owner ? info.owner->base : noBaseStr, info.subscriptions, info.valueptr != NULL ? *((float *)info.valueptr) : 0);
             break;
         case TYPE_INT16_ARRAY:
         case TYPE_FLOAT_ARRAY:
         case TYPE_EXECUTE:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td></td></tr>",
-                     index, "Float[]", info.name, info.owner ? info.owner->base : str, info.subscriptions);
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>float[]</td><td>%s</td><td>%s</td><td>%d</td><td></td></tr>",
+                     index, info.name, info.owner ? info.owner->base : noBaseStr, info.subscriptions);
             break;
         case TYPE_STRING:
-        pp_get_as_string(pp_get(info.name), strBuf, &strBufLen, false);
+            strBufLen = nvs_get_size(info.name);
+            strBuf = (char *)malloc(strBufLen+1);
+            pp_get_as_string(pp_get(info.name), strBuf, &strBufLen, false);
             snprintf(buf, bufsize, "<tr><td>%d</td><td>String</td><td>%s</td><td>%s</td><td>%d</td><td>%s</td></tr>",
-                     index, info.name, info.owner ? info.owner->base : str, info.subscriptions, strBuf);
+                     index, info.name, info.owner ? info.owner->base : noBaseStr, info.subscriptions, strBuf);
+            free(strBuf);
             break;
         case TYPE_BINARY:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>%d</td><td>--</td></tr>",
-                     index, "Binary", info.name, info.owner ? info.owner->base : str, info.subscriptions);
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>binary</td><td>%s</td><td>%s</td><td>%d</td><td>--</td></tr>",
+                     index, info.name, info.owner ? info.owner->base : noBaseStr, info.subscriptions);
             break;
         case TYPE_BOOL:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>--</td><td>--</td></tr>",
-                     index, "Bool", info.name, info.owner ? info.owner->base : str);
+            if (info.valueptr == NULL)
+                tmp = noBaseStr;
+            else
+                tmp = *((bool *)info.valueptr) ? "true" : "false";
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>bool</td><td>%s</td><td>%s</td><td>%d</td><td>%s</td></tr>",
+                     index, info.name, info.owner ? info.owner->base : noBaseStr, info.subscriptions, tmp);
             break;
         default:
-            snprintf(buf, bufsize, "<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>--</td><td>--</td></tr>",
-                     index, "Unknown", info.name, info.owner ? info.owner->base : str);
+            snprintf(buf, bufsize, "<tr><td>%d</td><td>unknown</td><td>%s</td><td>%s</td><td>--</td><td>--</td></tr>",
+                     index, info.name, info.owner ? info.owner->base : noBaseStr);
             break;
         }
         httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
@@ -197,7 +228,6 @@ static void print_public_parameters(httpd_req_t *req, char *buf, size_t bufsize)
         index = pp_get_info(index, &info);
     }
     httpd_resp_send_chunk(req, hdr_table_end, HTTPD_RESP_USE_STRLEN);
-    free(strBuf);
 }
 
 static void print_tasks(httpd_req_t *req, char *buf, size_t bufsize, const char *param)
@@ -238,14 +268,14 @@ static void print_tasks(httpd_req_t *req, char *buf, size_t bufsize, const char 
 
                 // "<tr><th>Name</th><th>Nr.</th><th>State</th><th>Current Priority</th><th>Base Priority</th><th>Run Time (%%)</th><th>Stack High</th></tr>"
                 snprintf(buf, bufsize, "<tr><td>%s</td><td>%d</td><td>%s</td><td>%d</td><td>%d</td><td>%lu</td><td>%lu</td><td>%d</td></tr>",
-                        pxTaskStatus->pcTaskName,
-                        pxTaskStatus->xTaskNumber,
-                        task_state[pxTaskStatus->eCurrentState],
-                        pxTaskStatus->uxCurrentPriority,
-                        pxTaskStatus->uxBasePriority,
-                        ulStatsAsPercentage,
-                        pxTaskStatus->usStackHighWaterMark,
-                        pxTaskStatus->xCoreID);
+                         pxTaskStatus->pcTaskName,
+                         pxTaskStatus->xTaskNumber,
+                         task_state[pxTaskStatus->eCurrentState],
+                         pxTaskStatus->uxCurrentPriority,
+                         pxTaskStatus->uxBasePriority,
+                         ulStatsAsPercentage,
+                         pxTaskStatus->usStackHighWaterMark,
+                         pxTaskStatus->xCoreID);
                 httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
                 buf += strlen((char *)buf);
             }
