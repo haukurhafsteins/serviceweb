@@ -4,6 +4,7 @@
 #include "freertos/task.h"
 
 #include <esp_log.h>
+#include <esp_app_desc.h>
 #include "esp_http_server.h"
 #include "nvs.h"
 #include "pp.h"
@@ -200,7 +201,7 @@ static void print_public_parameters(httpd_req_t *req, char *buf, size_t bufsize)
             break;
         case TYPE_STRING:
             strBufLen = nvs_get_size(info.name);
-            strBuf = (char *)malloc(strBufLen+1);
+            strBuf = (char *)malloc(strBufLen + 1);
             pp_get_as_string(pp_get(info.name), strBuf, &strBufLen, false);
             snprintf(buf, bufsize, "<tr><td>%d</td><td>String</td><td>%s</td><td>%s</td><td>%d</td><td>%s</td></tr>",
                      index, info.name, info.owner ? info.owner->base : noBaseStr, info.subscriptions, strBuf);
@@ -358,6 +359,30 @@ esp_err_t sysmon_get_handler(httpd_req_t *req)
     httpd_resp_send_chunk(req, HTML_DOC_BODY_TO_END, HTTPD_RESP_USE_STRLEN);
     httpd_resp_send_chunk(req, buf, 0);
 
+    free(buf);
+
+    return ESP_OK;
+}
+
+esp_err_t sysmon_get_info(httpd_req_t *req)
+{
+    const int bufsize = 4096;
+    char *buf = (char *)calloc(bufsize, sizeof(char));
+    const esp_app_desc_t *app_desc = esp_app_get_description();
+    snprintf(buf, bufsize, "{\
+        \"app_name\": \"%s\",\
+        \"app_version\": \"%s\",\
+        \"app_compile_date\": \"%s\",\
+        \"app_compile_time\": \"%s\",\
+        \"app_idf_version\": \"%s\"\
+    }",
+             app_desc->project_name,
+             app_desc->version,
+             app_desc->date,
+             app_desc->time,
+             app_desc->idf_ver);
+
+    httpd_resp_send(req, buf, HTTPD_RESP_USE_STRLEN);
     free(buf);
 
     return ESP_OK;
