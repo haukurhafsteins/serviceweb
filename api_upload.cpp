@@ -47,7 +47,7 @@ bool get_value_from_query(httpd_req_t *req, const char* value_name, char *destin
     return true;
 }
 
-static bool get_boundary(httpd_req_t *req, char *boundary, size_t boundary_len)
+bool _get_boundary(httpd_req_t *req, char *boundary, size_t boundary_len)
 {
     static char buf[100];
     if (ESP_OK == httpd_req_get_hdr_value_str(req, "Content-Type", buf, sizeof(buf)))
@@ -137,7 +137,7 @@ esp_err_t api_file_upload_handler(httpd_req_t *req)
     if (!get_value_from_query(req, "dir", destination, sizeof(destination)))
         return ESP_FAIL;
 
-    if (!get_boundary(req, boundary, sizeof(boundary)))
+    if (!_get_boundary(req, boundary, sizeof(boundary)))
         return ESP_FAIL;
 
     static char buf[API_BUFFSIZE];

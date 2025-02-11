@@ -15,3 +15,5 @@ esp_err_t api_file_download_handler(httpd_req_t *req);
 esp_err_t api_file_list_all_handler(httpd_req_t *req);
 esp_err_t api_nvs(httpd_req_t* req);
 
+bool _get_boundary(httpd_req_t *req, char *boundary, size_t boundary_len);
+
