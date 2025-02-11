@@ -40,6 +40,7 @@ typedef struct
 } file_get_t;
 
 extern esp_err_t ota_post_handler(httpd_req_t* req);
+extern esp_err_t web_post_handler(httpd_req_t* req);
 extern esp_err_t sysmon_get_handler(httpd_req_t* req);
 extern esp_err_t sysmon_get_info(httpd_req_t* req);
 extern esp_err_t sysmon_get_partition(httpd_req_t* req);
@@ -222,7 +223,7 @@ static esp_err_t resp_disk_file(httpd_req_t* req)
     }
 
     // Construct the file path.
-    snprintf(buf, bufsize, "/spiffs%s", req->uri);
+    snprintf(buf, bufsize, "/web%s", req->uri);
 
     remove_query_parameters(buf);
     serviceweb_set_content_type(req, buf);
@@ -765,7 +766,7 @@ void serviceweb_register_files(const char* basePath, const char* path)
     DIR* dp = opendir(path);
     if (dp == NULL)
     {
-        perror("Unable to open directory");
+        printf("Unable to open directory %s: %s", path, strerror(errno));
         free(fullPath);
         return;
     }
@@ -828,15 +829,13 @@ void serviceweb_init(pp_evloop_t* evloop, char* buffer, size_t size, char* rxbuf
 void serviceweb_start(void)
 {
     httpss_register_url("/ws", true, ws_handler, HTTP_GET, NULL);
-    httpss_register_url("/update", false, ota_post_handler, HTTP_POST, NULL);
+    httpss_register_url("/update/web", false, web_post_handler, HTTP_POST, NULL);
+    httpss_register_url("/update/firmware", false, ota_post_handler, HTTP_POST, NULL);
     httpss_register_url("/metrics", false, sysmon_get_handler, HTTP_GET, NULL);
     httpss_register_url("/info", false, sysmon_get_info, HTTP_GET, NULL);
     httpss_register_url("/partition", false, sysmon_get_partition, HTTP_GET, NULL);
 
     start_api_server();
-
-    //const char *path = "/spiffs/";
-    //register_files(path, path);
 
     ESP_ERROR_CHECK(esp_event_handler_instance_register(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_ON_CONNECTED, &evloop_http_event, NULL, NULL));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(ESP_HTTP_SERVER_EVENT, HTTP_SERVER_EVENT_DISCONNECTED, &evloop_http_event, NULL, NULL));
