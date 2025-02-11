@@ -14,7 +14,6 @@
 #include "httpss.h"
 #include "api_priv.hpp"
 
-#define MOUNT_POINT "/spiffs"
 #define TAG "FILE_SERVER"
 
 static esp_err_t file_rename_handler(httpd_req_t* req)
@@ -59,7 +58,7 @@ esp_err_t api_file_list_all_handler(httpd_req_t* req)
     }
     else
     {
-        strcpy(directory, "/spiffs");
+        strcpy(directory, "/littlefs");
     }
 
     cJSON* json_array = cJSON_CreateArray();
