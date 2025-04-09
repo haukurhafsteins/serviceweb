@@ -5,7 +5,7 @@ extern "C"
 {
 #endif
 
-void serviceweb_init(pp_evloop_t *evloop, char* txbuf, size_t size, char* rxbuf, size_t rxsize);
+void serviceweb_init(pp_evloop_t *evloop, char* txbuf, size_t size, char* rxbuf, size_t rxsize, const char* root);
 void serviceweb_start(void);
 void serviceweb_stop(void);
 void serviceweb_set_nvs_namespace(const char *name);

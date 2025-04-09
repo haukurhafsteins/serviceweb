@@ -65,6 +65,7 @@ static char* rx_buf = 0;
 static size_t rx_buf_size = 0;
 static pp_evloop_t* evloop;
 static std::map<std::string, file_get_t> file_get_map;
+static const char* web_root = NULL;
 
 static void evloop_newstate(void* handler_arg, esp_event_base_t base, int32_t id, void* context);
 
@@ -223,7 +224,7 @@ static esp_err_t resp_disk_file(httpd_req_t* req)
     }
 
     // Construct the file path.
-    snprintf(buf, bufsize, "/web%s", req->uri);
+    snprintf(buf, bufsize, "%s/%s", web_root, req->uri);
 
     remove_query_parameters(buf);
     serviceweb_set_content_type(req, buf);
@@ -816,8 +817,10 @@ bool serviceweb_register_memory_file(const char* path, const uint8_t* start, con
     return httpss_register_url(path, false, resp_memory_file, HTTP_GET, NULL);
 }
 
-void serviceweb_init(pp_evloop_t* evloop, char* buffer, size_t size, char* rxbuf, size_t rxsize)
+void serviceweb_init(pp_evloop_t* evloop, char* buffer, size_t size, char* rxbuf, size_t rxsize, const char* root)
 {
+    web_root = root;
+
     ::evloop = evloop;
     json_buf = buffer;
     json_buf_size = size;
