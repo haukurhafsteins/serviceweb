@@ -268,15 +268,15 @@ static void print_tasks(httpd_req_t *req, char *buf, size_t bufsize, const char 
                 ulStatsAsPercentage = pxTaskStatus->ulRunTimeCounter / ulTotalRunTime;
 
                 // "<tr><th>Name</th><th>Nr.</th><th>State</th><th>Current Priority</th><th>Base Priority</th><th>Run Time (%%)</th><th>Stack High</th></tr>"
-                snprintf(buf, bufsize, "<tr><td>%s</td><td>%d</td><td>%s</td><td>%d</td><td>%d</td><td>%lu</td><td>%lu</td><td>%d</td></tr>",
+                snprintf(buf, bufsize, "<tr><td>%s</td><td>%d</td><td>%s</td><td>%d</td><td>%d</td><td>%lu</td><td>%lu</td><td>xCoreID</td></tr>",
                          pxTaskStatus->pcTaskName,
                          pxTaskStatus->xTaskNumber,
                          task_state[pxTaskStatus->eCurrentState],
                          pxTaskStatus->uxCurrentPriority,
                          pxTaskStatus->uxBasePriority,
                          ulStatsAsPercentage,
-                         pxTaskStatus->usStackHighWaterMark,
-                         pxTaskStatus->xCoreID);
+                         pxTaskStatus->usStackHighWaterMark/*,
+                         pxTaskStatus->xCoreID*/);
                 httpd_resp_send_chunk(req, buf, HTTPD_RESP_USE_STRLEN);
                 buf += strlen((char *)buf);
             }
