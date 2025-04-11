@@ -42,11 +42,22 @@ esp_err_t api_file_download_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
+    // if file ends with .gz, set gzip_supported to true
+    bool gzip_supported = false;
+    if (strstr(filepath, ".gz") != NULL)
+    {
+        if (ESP_OK != _set_gz_support(req, gzip_supported))
+        {
+            ESP_LOGE(TAG, "Error setting gzip support for file %s", req->uri);
+            return ESP_FAIL;
+        }
+    }
+
     printf("File path: %s\n", filepath);
     printf("File size: %ld\n", file_stat.st_size);
     char length_header[32];
     snprintf(length_header, sizeof(length_header), "%ld", file_stat.st_size);
-    //httpd_resp_set_hdr(req, "Content-Length", length_header);
+    // httpd_resp_set_hdr(req, "Content-Length", length_header);
 
     serviceweb_set_content_type(req, filepath);
 
