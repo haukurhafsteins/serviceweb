@@ -30,7 +30,7 @@ bool get_value_from_query(httpd_req_t *req, const char* value_name, char *destin
         {
             if (httpd_query_key_value(buf1, value_name, destination, dest_len) != ESP_OK)
             {
-                ESP_LOGI(TAG, "Destination not found in URL query %s", buf1);
+                ESP_LOGI(TAG, "Destination not found in URL query %s, value name: %s, destination: %s", buf1, value_name, destination);
                 free(buf1);
                 httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Destination not found in URL query");
                 return false;
@@ -40,7 +40,7 @@ bool get_value_from_query(httpd_req_t *req, const char* value_name, char *destin
     }
     else
     {
-        ESP_LOGI(TAG, "Query not found");
+        ESP_LOGI(TAG, "Query not found in uri: %s", req->uri);
         httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Query not found");
         return false;
     }
@@ -65,16 +65,8 @@ bool _get_boundary(httpd_req_t *req, char *boundary, size_t boundary_len)
     return false;
 }
 
-static FILE *create_file(httpd_req_t *req, const char *filename, char *destination)
+static FILE *create_file(httpd_req_t *req, const char *filepath)
 {
-    char filepath[FILE_PATH_MAX];
-    if (snprintf(filepath, sizeof(filepath), "%s/%s", destination, filename) >= sizeof(filepath))
-    {
-        ESP_LOGE(TAG, "Filename is too long");
-        httpd_resp_send_err(req, HTTPD_400_BAD_REQUEST, "Filename is too long");
-        return NULL;
-    }
-
     char *slash = strrchr(filepath, '/');
     if (slash)
     {
@@ -95,7 +87,7 @@ static FILE *create_file(httpd_req_t *req, const char *filename, char *destinati
     FILE *f = fopen(filepath, "w");
     if (!f)
     {
-        ESP_LOGE(TAG, "Failed to open file for writing");
+        ESP_LOGE(TAG, "Failed to open file for writing: %s", filepath);
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to open file for writing");
         return NULL;
     }
@@ -131,10 +123,10 @@ static bool extract_filename_from_content_disposition(httpd_req_t req, char *buf
 esp_err_t api_file_upload_handler(httpd_req_t *req)
 {
     esp_err_t res = ESP_OK;
-    char destination[64];
+    char filePath[64];
     char boundary[BOUNDARY_MAX_LEN];
 
-    if (!get_value_from_query(req, "dir", destination, sizeof(destination)))
+    if (!get_value_from_query(req, "file", filePath, sizeof(filePath)))
         return ESP_FAIL;
 
     if (!_get_boundary(req, boundary, sizeof(boundary)))
@@ -163,7 +155,7 @@ esp_err_t api_file_upload_handler(httpd_req_t *req)
                 fclose(f);
                 f = NULL;
             }
-            ESP_LOGI(TAG, "File reception complete");
+            ESP_LOGI(TAG, "R%d: File reception complete for %s", received, filePath);
             httpd_resp_sendstr(req, "File uploaded successfully");
             break;
         }
@@ -184,14 +176,14 @@ esp_err_t api_file_upload_handler(httpd_req_t *req)
                     {
                         data_start = header_end + 4; // Move past the "\r\n\r\n" to the binary data start
                         char filename[64];
-                        if (extract_filename_from_content_disposition(*req, buf, filename, sizeof(filename)))
-                        {
-                            if ((f = create_file(req, filename, destination)) == NULL)
+                        // if (extract_filename_from_content_disposition(*req, buf, filename, sizeof(filename)))
+                        // {
+                            if ((f = create_file(req, filePath)) == NULL)
                             {
                                 res = ESP_FAIL;
                                 break;
                             }
-                        }
+                        // }
                     }
                 }
                 else
@@ -206,7 +198,7 @@ esp_err_t api_file_upload_handler(httpd_req_t *req)
                 if (data_end)
                 {
                     fwrite(data_start, 1, data_end - data_start, f);
-                    ESP_LOGI(TAG, "File reception complete");
+                    ESP_LOGI(TAG, "R%d: File reception complete for %s", received, filePath);
                     fclose(f);
                     f = NULL;
                     data_start = data_end + strlen(boundary);
