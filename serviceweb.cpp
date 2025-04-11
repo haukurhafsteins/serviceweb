@@ -122,13 +122,12 @@ void serviceweb_set_content_type(httpd_req_t* req, const char* filename)
     //    httpd_resp_set_hdr(req, "Cache-Control", "public, max-age=31536000"); // One year cache      
 }
 
-static esp_err_t set_gz_support(httpd_req_t* req, bool& gzip_supported, bool& keep_alive)
+esp_err_t _set_gz_support(httpd_req_t* req, bool& gzip_supported)
 {
     esp_err_t err = ESP_OK;
     char encoding[64];
     char connection[32];
     gzip_supported = false;
-    keep_alive = false;
     if (httpd_req_get_hdr_value_str(req, "Accept-Encoding", encoding, sizeof(encoding)) == ESP_OK)
     {
         if (strstr(encoding, "gzip"))
@@ -139,6 +138,14 @@ static esp_err_t set_gz_support(httpd_req_t* req, bool& gzip_supported, bool& ke
                 return ESP_FAIL;
         }
     }
+    return err;
+}
+esp_err_t _set_keepalive_support(httpd_req_t* req, bool& keep_alive)
+{
+    esp_err_t err = ESP_OK;
+    char encoding[64];
+    char connection[32];
+    keep_alive = false;
     if (httpd_req_get_hdr_value_str(req, "Connection", connection, sizeof(connection)) == ESP_OK)
     {
         if (strstr(connection, "keep-alive"))
@@ -186,7 +193,8 @@ static esp_err_t resp_memory_file(httpd_req_t* req)
     bool gzip_supported, keep_alive;
     file_get_t file = file_get_map[buf];
 
-    set_gz_support(req, gzip_supported, keep_alive);
+    _set_gz_support(req, gzip_supported);
+    _set_keepalive_support(req, keep_alive);
     httpd_resp_send_chunk(req, (char*)file.html_start, file.html_end - file.html_start);
     esp_err_t ret = httpd_resp_send_chunk(req, buf, 0);
     free(buf);
@@ -214,9 +222,8 @@ static esp_err_t resp_disk_file(httpd_req_t* req)
     }
 
     bool gzip_supported = false;
-    bool keep_alive = false;
 
-    if (ESP_OK != set_gz_support(req, gzip_supported, keep_alive))
+    if (ESP_OK != _set_gz_support(req, gzip_supported))
     {
         ESP_LOGE(TAG, "Error setting gzip support for file %s", req->uri);
         free(buf);
