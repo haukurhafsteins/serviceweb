@@ -126,7 +126,6 @@ esp_err_t _set_gz_support(httpd_req_t* req, bool& gzip_supported)
 {
     esp_err_t err = ESP_OK;
     char encoding[64];
-    char connection[32];
     gzip_supported = false;
     if (httpd_req_get_hdr_value_str(req, "Accept-Encoding", encoding, sizeof(encoding)) == ESP_OK)
     {
@@ -143,7 +142,6 @@ esp_err_t _set_gz_support(httpd_req_t* req, bool& gzip_supported)
 esp_err_t _set_keepalive_support(httpd_req_t* req, bool& keep_alive)
 {
     esp_err_t err = ESP_OK;
-    char encoding[64];
     char connection[32];
     keep_alive = false;
     if (httpd_req_get_hdr_value_str(req, "Connection", connection, sizeof(connection)) == ESP_OK)
@@ -530,7 +528,7 @@ static void write_to_json_buf(pp_t pp, const char* format, ...)
     }
     va_end(valist);
     size_t read = json_buf_size - len;
-    if (pp_get_as_string(pp, &json_buf[len], &read, false))
+    if (pp_to_string(pp, NULL, &json_buf[len], &read))
         strncat(json_buf, "}}", json_buf_size - len - read);
     else
         strncat(json_buf, "\"\"}}", json_buf_size - len);
