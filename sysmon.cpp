@@ -202,7 +202,7 @@ static void print_public_parameters(httpd_req_t *req, char *buf, size_t bufsize)
         case TYPE_STRING:
             strBufLen = nvs_get_size(info.name);
             strBuf = (char *)malloc(strBufLen + 1);
-            pp_get_as_string(pp_get(info.name), strBuf, &strBufLen, false);
+            pp_to_string(pp_get(info.name), NULL, strBuf, &strBufLen);
             snprintf(buf, bufsize, "<tr><td>%d</td><td>String</td><td>%s</td><td>%s</td><td>%d</td><td>%s</td></tr>",
                      index, info.name, info.owner ? info.owner->base : noBaseStr, info.subscriptions, strBuf);
             free(strBuf);
