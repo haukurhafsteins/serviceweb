@@ -179,6 +179,7 @@ static esp_err_t file_delete_handler(httpd_req_t* req)
 static esp_err_t api_reboot(httpd_req_t* req)
 {
     httpd_resp_sendstr(req, "{\"message\": \"Rebooting...\"}");
+    sleep(1);
     esp_restart();
     return ESP_OK;
 }
