@@ -22,6 +22,8 @@ esp_err_t ota_post_handler(httpd_req_t *req)
     esp_ota_handle_t ota_handle;
     const esp_partition_t *update_partition = esp_ota_get_next_update_partition(NULL);
 
+    ESP_LOGI(TAG, "OTA Update partition: %s", update_partition->label);
+
     esp_err_t err = esp_ota_begin(update_partition, OTA_SIZE_UNKNOWN, &ota_handle);
     if (err != ESP_OK)
     {
@@ -101,10 +103,8 @@ esp_err_t ota_post_handler(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    ESP_LOGI(TAG, "Update succeeded. Rebooting...");
-    httpd_resp_sendstr(req, "Update succeeded. Rebooting...");
-
-    esp_restart();
+    ESP_LOGI(TAG, "Update succeeded!");
+    httpd_resp_sendstr(req, "Update succeeded!");
 
     return ESP_OK;
 }
@@ -195,9 +195,8 @@ esp_err_t web_post_handler(httpd_req_t *req)
         }
     }
 
-    ESP_LOGI(TAG, "Web update succeeded. Rebooting...");
-    httpd_resp_sendstr(req, "Web update succeeded. Rebooting...");
-    esp_restart();
+    ESP_LOGI(TAG, "Web update succeeded!");
+    httpd_resp_sendstr(req, "Web update succeeded!");
 
     return ESP_OK;
 }
@@ -207,8 +206,17 @@ esp_err_t sysmon_get_partition(httpd_req_t *req)
     const esp_partition_t *nextPart = esp_ota_get_next_update_partition(currentPart);
     esp_app_desc_t currentApp = {}, nextApp = {};
 
-    esp_ota_get_partition_description(currentPart, &currentApp);
-    esp_ota_get_partition_description(nextPart, &nextApp);
+    if (!currentPart || !nextPart) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Partition not found");
+        return ESP_FAIL;
+    }
+
+    if (esp_ota_get_partition_description(currentPart, &currentApp) != ESP_OK ||
+        esp_ota_get_partition_description(nextPart, &nextApp) != ESP_OK) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to read partition description");
+        return ESP_FAIL;
+    }
+
     currentApp.project_name[31] = 0;
     currentApp.version[15] = 0;
     nextApp.project_name[31] = 0;
@@ -216,6 +224,11 @@ esp_err_t sysmon_get_partition(httpd_req_t *req)
 
     const int bufsize = 512;
     char *buf = (char *)calloc(bufsize, sizeof(char));
+    if (!buf) {
+        httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Memory allocation failed");
+        return ESP_FAIL;
+    }
+
     snprintf(buf, bufsize, "{\
         \"current\": {\
             \"type\": \"%X\",\
@@ -226,25 +239,25 @@ esp_err_t sysmon_get_partition(httpd_req_t *req)
         },\
         \"next\": {\
             \"type\": \"%X\",\
-            \"size\": \"%ld\",\
+            \"size\": %ld,\
             \"label\": \"%s\",\
             \"appName\": \"%s\",\
             \"appVersion\": \"%s\"\
         }\
     }",
-             currentPart->type,
-             currentPart->size,
-             currentPart->label,
-             currentApp.project_name,
-             currentApp.version,
-             nextPart->type,
-             nextPart->size,
-             nextPart->label,
-             nextApp.project_name,
-             nextApp.version);
+        currentPart->type,
+        currentPart->size,
+        currentPart->label,
+        currentApp.project_name,
+        currentApp.version,
+        nextPart->type,
+        nextPart->size,
+        nextPart->label,
+        nextApp.project_name,
+        nextApp.version);
 
     httpd_resp_send(req, buf, HTTPD_RESP_USE_STRLEN);
     free(buf);
-
     return ESP_OK;
 }
+
