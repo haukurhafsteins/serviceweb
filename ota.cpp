@@ -290,12 +290,12 @@ esp_err_t sysmon_get_partition(httpd_req_t *req)
         return ESP_FAIL;
     }
 
-    if (esp_ota_get_partition_description(currentPart, &currentApp) != ESP_OK ||
-        esp_ota_get_partition_description(nextPart, &nextApp) != ESP_OK)
+    if (esp_ota_get_partition_description(currentPart, &currentApp) != ESP_OK)
     {
         httpd_resp_send_err(req, HTTPD_500_INTERNAL_SERVER_ERROR, "Failed to read partition description");
         return ESP_FAIL;
     }
+    esp_ota_get_partition_description(nextPart, &nextApp);
 
     currentApp.project_name[31] = 0;
     currentApp.version[15] = 0;
