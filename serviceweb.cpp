@@ -636,6 +636,134 @@ static esp_err_t ws_handler(httpd_req_t* req)
     return err;
 }
 
+#ifdef USE_RTOS_ABSTRACTION
+static void evloop_ws_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
+{
+    pp_websocket_data_t* wsdata = (pp_websocket_data_t*)event_data;
+    // ESP_LOGI(TAG, "Payload: %s", wsdata->payload);
+
+    cJSON* doc = cJSON_Parse(wsdata->payload);
+    if (doc == NULL)
+    {
+        const char* error_ptr = cJSON_GetErrorPtr();
+        if (error_ptr != NULL)
+        {
+            ESP_LOGE(TAG, "cJSON error : %s", error_ptr);
+        }
+        return;
+    }
+
+    const cJSON* cmd = cJSON_GetObjectItemCaseSensitive(doc, "cmd");
+    if (!cJSON_IsString(cmd) || cmd->valuestring == NULL)
+        goto exit;
+
+    //----------------- publish -----------------
+    // if (0 == strcmp(cmd->valuestring, "publish"))
+    // {
+    //     const cJSON* data = cJSON_GetObjectItemCaseSensitive(doc, "data");
+    //     if (!cJSON_IsObject(data))
+    //         goto exit;
+
+    //     const cJSON* name = cJSON_GetObjectItemCaseSensitive(data, "name");
+    //     if (!cJSON_IsString(name) || name->valuestring == NULL)
+    //         goto exit;
+
+    //     pp_t pp = pp_get(name->valuestring);
+    //     if (pp == NULL)
+    //         goto exit;
+
+    //     const cJSON* value = cJSON_GetObjectItemCaseSensitive(data, "value");
+
+    //     parameter_type_t pp_type = pp_get_type(pp);
+    //     switch (pp_type)
+    //     {
+    //     case TYPE_STRING:
+    //         if (cJSON_IsString(value) && value->valuestring != NULL)
+    //             pp_post_write_string(pp, value->valuestring);
+    //         else
+    //             ESP_LOGW(TAG, "%s: Parameter %s is not string", __func__, pp_get_name(pp));
+    //         break;
+    //     case TYPE_BOOL:
+    //         if (cJSON_IsNumber(value) || cJSON_IsBool(value))
+    //             pp_post_write_bool(pp, value->valueint != 0);
+    //         else
+    //             ESP_LOGW(TAG, "%s: Parameter %s is not bool", __func__, pp_get_name(pp));
+    //         break;
+    //     case TYPE_FLOAT:
+    //         if (cJSON_IsNumber(value))
+    //             pp_post_write_float(pp, value->valuedouble);
+    //         else
+    //             ESP_LOGW(TAG, "%s: Parameter %s is not float", __func__, pp_get_name(pp));
+    //         break;
+    //     case TYPE_INT32:
+    //         if (cJSON_IsNumber(value))
+    //             pp_post_write_int32(pp, value->valueint);
+    //         else
+    //             ESP_LOGW(TAG, "%s: Parameter %s is not int32", __func__, pp_get_name(pp));
+    //         break;
+    //     case TYPE_INT64:
+    //         if (cJSON_IsNumber(value))
+    //             pp_post_write_int64(pp, value->valueint);
+    //         else
+    //             ESP_LOGW(TAG, "%s: Parameter %s is not int64", __func__, pp_get_name(pp));
+    //         break;
+    //     default:
+    //         ESP_LOGE(TAG, "Publish for parameter %s of type %d not supported", pp_get_name(pp), pp_type);
+    //         break;
+    //     }
+    // }
+    // else
+    {
+        const cJSON* parname = cJSON_GetObjectItemCaseSensitive(doc, "data");
+        if (!cJSON_IsString(parname) || parname->valuestring == NULL)
+            goto exit;
+
+        pp_t pp = pp_get(parname->valuestring);
+        if (pp == NULL)
+            goto exit;
+
+        //----------------- subscribe -----------------
+        if (0 == strcmp(cmd->valuestring, "subscribe"))
+        {
+            // If the parameter is already subscribed to or if subscribing is
+            // successful, add the socket to the list of sockets for this parameter.
+            if (par_exist(pp) || pp_subscribe(pp, evloop, evloop_newstate))
+            {
+                if (!par_socket_exist(pp, wsdata->socket))
+                    par_add_socket(pp, wsdata->socket);
+                write_to_json_buf(pp, RESP_MESSAGE, SUBSCRIBE_RESP, parname->valuestring);
+                if (!httpss_websocket_send(wsdata->socket, json_buf))
+                {
+                    socket_closed_list.push_back(wsdata->socket);
+                    par_cleanup();
+                }
+            }
+            else
+            {
+                ESP_LOGI(TAG, "%s: Parameter %s does not exist", __func__, parname->valuestring);
+                write_to_json_buf(pp, RESP_MESSAGE, SUBSCRIBE_RESP, "error");
+                if (!httpss_websocket_send(wsdata->socket, json_buf))
+                {
+                    socket_closed_list.push_back(wsdata->socket);
+                    par_cleanup();
+                }
+            }
+        }
+        //----------------- unsubscribe -----------------
+        else if (0 == strcmp(cmd->valuestring, "unsubscribe"))
+        {
+            snprintf(json_buf, json_buf_size, UNSUBSCRIBE_MESSAGE, parname->valuestring);
+            httpss_websocket_send(wsdata->socket, json_buf);
+            par_remove_socket(pp, wsdata->socket);
+            par_cleanup();
+        }
+        else
+            ESP_LOGW(TAG, "%s: Unhandled command: %s", __func__, cmd->valuestring);
+    }
+exit:
+    cJSON_Delete(doc);
+}
+#else
 static void evloop_ws_handler(void* arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
 {
     pp_websocket_data_t* wsdata = (pp_websocket_data_t*)event_data;
@@ -762,6 +890,7 @@ static void evloop_ws_handler(void* arg, esp_event_base_t event_base, int32_t ev
 exit:
     cJSON_Delete(doc);
 }
+#endif
 
 void serviceweb_register_files(const char* basePath, const char* path)
 {
