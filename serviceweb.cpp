@@ -658,61 +658,61 @@ static void evloop_ws_handler(void* arg, esp_event_base_t event_base, int32_t ev
         goto exit;
 
     //----------------- publish -----------------
-    // if (0 == strcmp(cmd->valuestring, "publish"))
-    // {
-    //     const cJSON* data = cJSON_GetObjectItemCaseSensitive(doc, "data");
-    //     if (!cJSON_IsObject(data))
-    //         goto exit;
+    if (0 == strcmp(cmd->valuestring, "publish"))
+    {
+        const cJSON* data = cJSON_GetObjectItemCaseSensitive(doc, "data");
+        if (!cJSON_IsObject(data))
+            goto exit;
 
-    //     const cJSON* name = cJSON_GetObjectItemCaseSensitive(data, "name");
-    //     if (!cJSON_IsString(name) || name->valuestring == NULL)
-    //         goto exit;
+        const cJSON* name = cJSON_GetObjectItemCaseSensitive(data, "name");
+        if (!cJSON_IsString(name) || name->valuestring == NULL)
+            goto exit;
 
-    //     pp_t pp = pp_get(name->valuestring);
-    //     if (pp == NULL)
-    //         goto exit;
+        pp_t pp = pp_get(name->valuestring);
+        if (pp == NULL)
+            goto exit;
 
-    //     const cJSON* value = cJSON_GetObjectItemCaseSensitive(data, "value");
+        const cJSON* value = cJSON_GetObjectItemCaseSensitive(data, "value");
 
-    //     parameter_type_t pp_type = pp_get_type(pp);
-    //     switch (pp_type)
-    //     {
-    //     case TYPE_STRING:
-    //         if (cJSON_IsString(value) && value->valuestring != NULL)
-    //             pp_post_write_string(pp, value->valuestring);
-    //         else
-    //             ESP_LOGW(TAG, "%s: Parameter %s is not string", __func__, pp_get_name(pp));
-    //         break;
-    //     case TYPE_BOOL:
-    //         if (cJSON_IsNumber(value) || cJSON_IsBool(value))
-    //             pp_post_write_bool(pp, value->valueint != 0);
-    //         else
-    //             ESP_LOGW(TAG, "%s: Parameter %s is not bool", __func__, pp_get_name(pp));
-    //         break;
-    //     case TYPE_FLOAT:
-    //         if (cJSON_IsNumber(value))
-    //             pp_post_write_float(pp, value->valuedouble);
-    //         else
-    //             ESP_LOGW(TAG, "%s: Parameter %s is not float", __func__, pp_get_name(pp));
-    //         break;
-    //     case TYPE_INT32:
-    //         if (cJSON_IsNumber(value))
-    //             pp_post_write_int32(pp, value->valueint);
-    //         else
-    //             ESP_LOGW(TAG, "%s: Parameter %s is not int32", __func__, pp_get_name(pp));
-    //         break;
-    //     case TYPE_INT64:
-    //         if (cJSON_IsNumber(value))
-    //             pp_post_write_int64(pp, value->valueint);
-    //         else
-    //             ESP_LOGW(TAG, "%s: Parameter %s is not int64", __func__, pp_get_name(pp));
-    //         break;
-    //     default:
-    //         ESP_LOGE(TAG, "Publish for parameter %s of type %d not supported", pp_get_name(pp), pp_type);
-    //         break;
-    //     }
-    // }
-    // else
+        parameter_type_t pp_type = pp_get_type(pp);
+        switch (pp_type)
+        {
+        case TYPE_STRING:
+            if (cJSON_IsString(value) && value->valuestring != NULL)
+                pp_post_write_string(pp, value->valuestring);
+            else
+                ESP_LOGW(TAG, "%s: Parameter %s is not string", __func__, pp_get_name(pp));
+            break;
+        case TYPE_BOOL:
+            if (cJSON_IsNumber(value) || cJSON_IsBool(value))
+                pp_post_write_bool(pp, value->valueint != 0);
+            else
+                ESP_LOGW(TAG, "%s: Parameter %s is not bool", __func__, pp_get_name(pp));
+            break;
+        case TYPE_FLOAT:
+            if (cJSON_IsNumber(value))
+                pp_post_write_float(pp, value->valuedouble);
+            else
+                ESP_LOGW(TAG, "%s: Parameter %s is not float", __func__, pp_get_name(pp));
+            break;
+        case TYPE_INT32:
+            if (cJSON_IsNumber(value))
+                pp_post_write_int32(pp, value->valueint);
+            else
+                ESP_LOGW(TAG, "%s: Parameter %s is not int32", __func__, pp_get_name(pp));
+            break;
+        case TYPE_INT64:
+            if (cJSON_IsNumber(value))
+                pp_post_write_int64(pp, value->valueint);
+            else
+                ESP_LOGW(TAG, "%s: Parameter %s is not int64", __func__, pp_get_name(pp));
+            break;
+        default:
+            ESP_LOGE(TAG, "Publish for parameter %s of type %d not supported", pp_get_name(pp), pp_type);
+            break;
+        }
+    }
+    else
     {
         const cJSON* parname = cJSON_GetObjectItemCaseSensitive(doc, "data");
         if (!cJSON_IsString(parname) || parname->valuestring == NULL)
